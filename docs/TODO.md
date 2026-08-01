@@ -10,7 +10,7 @@
 
 > Numeración de fases 0–16 (sin saltos). Cada fase tiene Definition of Done. El roadmap versionado está en `docs/ROADMAP.md`.
 >
-> Nota: la versión de documentación (0.2.0) lidera a la versión de código (0.1.0) durante el desarrollo; `VERSION` se crea con `0.1.0` y se incrementa al completar hitos.
+> Nota: la versión de documentación (0.4.0) lidera a la versión de código (1.0.0) durante el desarrollo; `VERSION` se crea con `1.0.0` y se incrementa al completar hitos (ver `docs/LEARNINGS.md`: tag = VERSION).
 
 ---
 
@@ -18,19 +18,10 @@
 
 - [x] Leer `docs/REQUIREMENTS.md`, `docs/ARCHITECTURE.md`, `docs/DESIGN.md` y `docs/EDITING.md`
 - [x] Definir estructura de carpetas (ver `docs/ARCHITECTURE.md`)
-- [ ] Crear `pubspec.yaml` con dependencias fijadas:
-  - `dxf: ^1.3.0`
-  - `provider: ^6.1.1`
-  - `file_picker: ^8.1.2`
-  - `shared_preferences: ^2.2.3`
-  - `path_provider: ^2.1.4`
-  - `screenshot: ^3.0.0`
-  - `share_plus: ^10.0.0`
-  - `flutter_svg: ^2.0.17`
-  - `path: ^1.9.0`, `collection: ^1.18.0`
-- [ ] Crear `analysis_options.yaml` con reglas estrictas (`flutter_lints`)
-- [ ] Crear `VERSION` con `0.1.0`
-- [ ] Configurar Android (minSdk 21, SAF)
+- [x] Crear `pubspec.yaml` con dependencias fijadas (parser propio, sin `dxf`): `provider`, `file_picker 10.3.10`, `shared_preferences`, `path_provider`, `screenshot`, `flutter_svg`, `path`, `collection`
+- [x] Crear `analysis_options.yaml` con reglas estrictas (`flutter_lints`)
+- [x] Crear `VERSION` con `1.0.0`
+- [x] Configurar Android (minSdk, SAF, icono launcher minimalista)
 - [ ] Configurar iOS (Info.plist: file sharing, fotos)
 - [ ] Configurar Windows/macOS/Linux
 - [ ] Preparar `assets/` (fonts, logo, previews) según `docs/AESTHETICS.md`

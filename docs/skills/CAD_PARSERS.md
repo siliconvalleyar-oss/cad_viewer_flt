@@ -1,59 +1,64 @@
 # 🎯 Skill: cad_parsers — CAD File Parsing & Writing System
 
-**Propósito:** Documentación del sistema de parseo y escritura DXF/DWG. Base técnica: `docs/FORMATS.md`.
+**Propósito:** Documentación del sistema de parseo y escritura DXF/DWG. Base técnica: `docs/FORMATS.md`. (v0.4.0 — parser propio, sin dependencias externas)
 
 ---
 
-## 1. DxfParserWrapper — Wrapper del paquete dxf
+## 1. DxfParserWrapper — Parser DXF propio
 
 **Archivo:** `lib/parsers/dxf_parser.dart`
-**Propósito:** Convierte la salida del paquete `dxf ^1.3.0` a modelos internos `CadFile`, `CadLayer`, `CadEntity`
+**Propósito:** Parsea DXF ASCII **directamente por pares (código de grupo, valor)** — sin paquete externo — y devuelve `CadFile`, `CadLayer`, `CadEntity`.
 
 ### API
 
 ```dart
 class DxfParserWrapper {
-  static CadFile parse(String content, {String fileName = ''});        // correr en Isolate
-  static Future<CadFile> parseFile(String path);
-  static CadFile fromDxfDocument(dxf.Document doc, {String fileName = ''});
+  ParseResult parse(String content, {String fileName = 'dibujo.dxf'});        // nunca lanza
+  ParseResult parseBytes(Uint8List bytes, {String fileName = 'dibujo.dxf'});  // detecta DXF binario
 }
+// ParseResult { CadFile? cadFile, String? error, List<String> warnings }
 ```
 
 ### Flujo
 
-1. Usar `dxf.Document.fromString(content)` del paquete `dxf`
-2. Recorrer `doc.layers` → `CadLayer`
-3. Recorrer `doc.entities` → mapear a `CadEntity` por tipo
-4. Recorrer `doc.blocks` → `CadBlock`
-5. Retornar `CadFile`
+1. `_readPairs(content)` → lista de `DxfPair(code, value)` (dos líneas por par)
+2. `_buildFile(pairs, ...)` recorre secciones HEADER (ACADVER, INSUNITS, EXTMIN/EXTMAX), TABLES (LAYER, DIMSTYLE), BLOCKS y ENTITIES
+3. Por entidad, `_parseEntity` agrupa códigos en `byCode` y mapea a `CadEntity`
+4. Retornar `ParseResult(cadFile: ...)` o el error/warnings
 
-### Entidades mapeadas
+### Entidades soportadas
 
-| Tipo dxf package | Modelo interno |
-|------------------|----------------|
-| dxf.Line | CadLine |
-| dxf.Circle | CadCircle |
-| dxf.Arc | CadArc |
-| dxf.Ellipse | CadEllipse |
-| dxf.LwPolyline | CadLwPolyline |
-| dxf.Polyline | CadPolyline (pesada, R12/LibreCAD: VERTEX + SEQEND) |
-| dxf.Text | CadText |
-| dxf.MText | CadMText (strip de códigos de formato) |
-| dxf.Insert | CadInsert |
-| dxf.Point | CadPoint |
-| dxf.Hatch | CadHatch (básico) |
-| dxf.Spline | CadSpline |
-| dxf.Dimension | CadDim |
-| dxf.Face3d | Cad3dFace |
+| Entidad DXF | Modelo interno |
+|-------------|----------------|
+| LINE | CadLine |
+| CIRCLE | CadCircle |
+| ARC | CadArc (ángulos → radianes) |
+| ELLIPSE | CadEllipse (eje mayor por 11/21, minorRatio 40, rotación) |
+| LWPOLYLINE | CadLwPolyline (códigos repetidos 10/20/42, bulges) |
+| POLYLINE pesada | CadPolyline (R12/LibreCAD: VERTEX + SEQEND) |
+| TEXT | CadText (1=texto, 40=altura, 50=rotación, 72=halign) |
+| MTEXT | CadMText (strip de códigos `\P`/`{}`) |
+| INSERT | CadInsert (2=bloque, 41/42=escala, 50=rotación) |
+| POINT | CadPoint |
+| HATCH | CadHatch (básico, contornos 10/20) |
+| SPLINE | CadSpline (puntos de control 10/20, nudos 40) |
+| DIMENSION | CadDim (10/20=def, 11/21=texto, 13/23=ext1, 14/24=ext2, 42=medición, 3=estilo) |
+| 3DFACE | Cad3dFace |
+
+### DIMSTYLE y cotas (DIMENSION)
+
+- `_parseDimStyle` lee la tabla DIMSTYLE: nombre (2), **dimtxt = 140** (altura de texto) y **dimasz = 41** (tamaño de flecha)
+- `_parseEntity` para DIMENSION resuelve el estilo por el grupo **3** y rellena `CadDim.textHeight` / `CadDim.arrowSize` (override con 140/41 de la entidad si existen); la medición real viene del grupo **42**
 
 ### Normalizaciones clave
 
 - **Color:** `62` ausente/256 = ByLayer → `color = null` (heredar). `62=0` = ByBlock.
 - **Bulge:** `bulge = tan(θ/4)`; convertir a arco al renderizar y recalcular al escribir.
-- **Unidades:** `$INSUNITS` → normalizar a mm (ADR-0007).
+- **Unidades:** `$INSUNITS` → `UnitsType.fromInsUnits` (mm interno, ADR-0007).
 - **Capa inexistente:** entidades se asignan a la capa `"0"` implícita.
 - **INSERT con bloque inexistente:** conservar, advertir, no renderizar contenido.
 - **Extrusión no ortogonal:** proyectar al plano XY con advertencia al editar.
+- **Handles ausentes:** generar `h<índice hex>`.
 
 ---
 

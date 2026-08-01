@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.4.9] - 2026-08-01 — Fix bloques con espejo (escala negativa): arcos y bulges invertidos
+### Fixed
+- **"Sobresalen cosas por fuera del vector diagonal"**: en `files_cad/example.dxf` los bloques de puertas (ARC de giro) y sanitarios (LWPOLYLINE con bulge) se insertan con **escala negativa** (`esc=(-1,1)`, `esc=(-1.15,1.15)`, etc.) y rotación (252.6°, 287.4°…). `_transformBlockEntity` no manejaba el **espejo**: un espejo invierte la orientación, por lo que los ángulos de ARC/ELLIPSE/TEXT deben **reflejarse** (θ → rot−θ o π+rot−θ) y los extremos del arco **intercambiarse**, y el **bulge de LWPOLYLINE debe negarse**. Sin esto, los arcos de giro de puertas y las curvas de griferías se dibujaban por el lado equivocado, "sobresaliendo" del vector
+### Added
+- `lib/utils/block_transform.dart` — `transformBlockEntity` (público, extraído de CadPainter): mapea ángulos con escala+rotación+espejo (`_mapAngle`), intercambia extremos de ARC con espejo, niega bulge de LWPOLYLINE con espejo, refleja rotación de TEXT/MTEXT/ELLIPSE/INSERT anidado
+- Test: `test/utils/block_transform_test.dart` (ARC espejo X/Y/doble espejo, caso real 252.6°, bulge negado, rotación de texto/elipse reflejada)
+### Changed
+- `lib/renderers/cad_painter.dart` — usa `transformBlockEntity` (eliminado `_transformBlockEntity` privado); culling de INSERT también pasa por el nuevo transform
+
 ## [0.4.8] - 2026-08-01 — Fix texto vertical "Sin guardar" en la barra superior
 ### Fixed
 - **Texto en vertical que ensanchaba la barra superior del visor**: el indicador de cambios sin guardar (`Text('Sin guardar')`) no tenía `maxLines`/`overflow`; cuando la barra quedaba estrecha (botón volver + nombre de archivo + botones undo/redo/guardar/capas/info/rotar/ajustar), el área flexible se reducía y Flutter envolvía la palabra **carácter a carácter en vertical**, disparando la altura de la barra y ocupando más pantalla de lo normal. Ahora se limita a 1 línea con elipsis

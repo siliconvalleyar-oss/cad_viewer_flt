@@ -18,6 +18,7 @@ import '../models/cad_block.dart';
 import '../models/cad_entity.dart';
 import '../models/cad_enums.dart';
 import '../models/cad_layer.dart';
+import '../utils/block_transform.dart';
 import '../utils/coordinate_transform.dart';
 import '../utils/geometry.dart';
 import '../utils/line_types.dart';
@@ -490,10 +491,7 @@ class CadPainter extends CustomPainter {
         i.y + (lx - base.x) * i.scaleX * sin + (ly - base.y) * i.scaleY * cos;
 
     for (final e in block.entities) {
-      final world = _transformBlockEntity(e, tx, ty, i);
-      if (world == null) {
-        continue;
-      }
+      final world = transformBlockEntity(e, tx, ty, i);
       if (world is CadInsert) {
         _paintInsert(canvas, world, stroke, depth: depth + 1);
       } else {
@@ -509,125 +507,6 @@ class CadPainter extends CustomPainter {
       }
     }
     return null;
-  }
-
-  /// Devuelve una copia de [e] con sus coordenadas transformadas por la
-  /// inserción (tx/ty ya incluyen traslación+escala+rotación del bloque).
-  /// `null` si el tipo no se puede transformar (se omite).
-  CadEntity? _transformBlockEntity(
-    CadEntity e,
-    double Function(double, double) tx,
-    double Function(double, double) ty,
-    CadInsert parent,
-  ) {
-    switch (e) {
-      case final CadLine l:
-        return l.copyWith(
-          x1: tx(l.x1, l.y1), y1: ty(l.x1, l.y1),
-          x2: tx(l.x2, l.y2), y2: ty(l.x2, l.y2),
-        );
-      case final CadCircle c:
-        final s = (parent.scaleX.abs() + parent.scaleY.abs()) / 2;
-        return c.copyWith(
-          cx: tx(c.cx, c.cy), cy: ty(c.cx, c.cy),
-          radius: c.radius * s,
-        );
-      case final CadArc a:
-        final s = (parent.scaleX.abs() + parent.scaleY.abs()) / 2;
-        return a.copyWith(
-          cx: tx(a.cx, a.cy), cy: ty(a.cx, a.cy),
-          radius: a.radius * s,
-          startAngle: a.startAngle + parent.rotation,
-          endAngle: a.endAngle + parent.rotation,
-        );
-      case final CadEllipse el:
-        final s = (parent.scaleX.abs() + parent.scaleY.abs()) / 2;
-        return el.copyWith(
-          cx: tx(el.cx, el.cy), cy: ty(el.cx, el.cy),
-          majorRadius: el.majorRadius * s,
-          minorRadius: el.minorRadius * s,
-          rotation: el.rotation + parent.rotation,
-        );
-      case final CadLwPolyline p:
-        return p.copyWith(
-          points: [
-            for (final v in p.points)
-              v.copyWith(x: tx(v.x, v.y), y: ty(v.x, v.y)),
-          ],
-        );
-      case final CadPolyline p:
-        return p.copyWith(
-          points: [
-            for (final pt in p.points)
-              pt.copyWith(x: tx(pt.x, pt.y), y: ty(pt.x, pt.y)),
-          ],
-        );
-      case final CadText t:
-        return t.copyWith(
-          x: tx(t.x, t.y), y: ty(t.x, t.y),
-          height: t.height * parent.scaleY.abs(),
-          rotation: t.rotation + parent.rotation,
-        );
-      case final CadMText m:
-        return m.copyWith(
-          x: tx(m.x, m.y), y: ty(m.x, m.y),
-          height: m.height * parent.scaleY.abs(),
-          rotation: m.rotation + parent.rotation,
-        );
-      case final CadInsert nested:
-        // El insert anidado se expresa en coordenadas del bloque padre.
-        return nested.copyWith(
-          x: tx(nested.x, nested.y),
-          y: ty(nested.x, nested.y),
-          scaleX: nested.scaleX * parent.scaleX,
-          scaleY: nested.scaleY * parent.scaleY,
-          rotation: nested.rotation + parent.rotation,
-        );
-      case final CadPoint pt:
-        return pt.copyWith(x: tx(pt.x, pt.y), y: ty(pt.x, pt.y));
-      case final CadHatch h:
-        return h.copyWith(
-          boundaries: [
-            for (final b in h.boundaries)
-              b.copyWith(
-                points: [
-                  for (final p in b.points)
-                    p.copyWith(x: tx(p.x, p.y), y: ty(p.x, p.y)),
-                ],
-              ),
-          ],
-        );
-      case final CadSpline s:
-        return s.copyWith(
-          controlPoints: [
-            for (final p in s.controlPoints)
-              p.copyWith(x: tx(p.x, p.y), y: ty(p.x, p.y)),
-          ],
-        );
-      case final CadDim d:
-        return d.copyWith(
-          x1: tx(d.x1, d.y1), y1: ty(d.x1, d.y1),
-          x2: tx(d.x2, d.y2), y2: ty(d.x2, d.y2),
-          x3: tx(d.x3, d.y3), y3: ty(d.x3, d.y3),
-          x4: tx(d.x4, d.y4), y4: ty(d.x4, d.y4),
-          textHeight: d.textHeight * parent.scaleY.abs(),
-          arrowSize: d.arrowSize * parent.scaleY.abs(),
-        );
-      case final Cad3dFace f:
-        return f.copyWith(
-          corners: [
-            for (final p in f.corners)
-              p.copyWith(x: tx(p.x, p.y), y: ty(p.x, p.y)),
-          ],
-        );
-      case final CadSolid s:
-        return s.copyWith(
-          corners: [
-            for (final p in s.corners)
-              p.copyWith(x: tx(p.x, p.y), y: ty(p.x, p.y)),
-          ],
-        );
-    }
   }
 
   void _paintHatch(Canvas canvas, CadHatch h, Color color) {
@@ -1007,10 +886,8 @@ class CadPainter extends CustomPainter {
             i.y + (lx - base.x) * i.scaleX * sin + (ly - base.y) * i.scaleY * cos;
         var b = const Bounds.empty();
         for (final e in block.entities) {
-          final world = _transformBlockEntity(e, tx, ty, i);
-          if (world != null) {
-            b = b.expandToInclude(_entityWorldBounds(world, depth: depth + 1));
-          }
+          final world = transformBlockEntity(e, tx, ty, i);
+          b = b.expandToInclude(_entityWorldBounds(world, depth: depth + 1));
         }
         return b;
       case final CadPoint pt:

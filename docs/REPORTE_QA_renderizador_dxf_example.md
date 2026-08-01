@@ -1,13 +1,55 @@
 # Reporte de QA — Renderizador CAD/DXF
 
 - **Archivo analizado (caso de falla):** `files_cad/example.dxf`
-- **Casos adicionales (Anexos A y B):** `files_cad/banera.dxf` (solo se ven las
-  cotas) y comparativa `files_cad/comparar/original.dxf` vs
-  `files_cad/comparar/modificado_por_aplicacion.dxf` (lectura ↔ escritura)
+- **Casos adicionales:** Anexo A — `files_cad/banera.dxf` (solo se ven las
+  cotas); Anexo B — comparativa `files_cad/comparar/original.dxf` vs
+  `files_cad/comparar/modificado_por_aplicacion.dxf` (lectura ↔ escritura);
+  Anexo C — fuentes de cotas descomunales; Anexo D — cotas dibujadas con
+  inclinación; Anexo E — texto vertical "Sin guardar" en la barra superior
 - **Documento de referencia:** `docs/CORREGIR_instrucciones-correccion-renderizador-dxf.md`
 - **Código auditado:** `lib/renderers/*.dart`, `lib/parsers/dxf_parser.dart`, `lib/models/*.dart`, `lib/controllers/*.dart`, `lib/utils/*.dart`
 - **Fecha:** 2026-08-01
 - **Autor del reporte:** Empleado de testing (QA)
+
+---
+
+## Checklist de verificación
+
+> **Instrucción:** en esta primera parte del checklist, **marque con `[x]` los
+> ítems ya cumplidos/verificados** (repruebe el síntoma descrito en la sección
+> correspondiente y confirme la corrección en la app). Deje `[ ]` los que aún
+> falten por revisar o corregir.
+
+### Hallazgos de código (sección 3)
+
+- [ ] BUG-01 — Halo de selección: resaltar solo el trazo, no la caja envolvente
+- [ ] BUG-02 — Grips dibujados con el transform de vista (siguen el pan)
+- [ ] BUG-03 — Cotas con LOD: sin piso fijo de 12 px
+- [ ] BUG-04 — Umbral LOD de texto ~8 px en vez de 2 px
+- [ ] BUG-05 — Viewport clipping y orden de prioridad de dibujo
+- [ ] BUG-06 — Caché / índice espacial (sin re-resolver bloques por frame)
+- [ ] BUG-07 — Parser conserva bloques anónimos/dinámicos (`*D…`, `*X3`)
+- [ ] BUG-08 — `SOLID`/`TRACE` soportado por el parser
+- [ ] BUG-09 — `entityBoundsInFile` de INSERT usa el punto base del bloque
+- [ ] BUG-10 — Hit-test de LWPOLYLINE abierta sin cierre fantasma
+- [ ] BUG-11 — Bulge del segmento de cierre en LWPOLYLINE cerrada
+- [ ] BUG-12 — Estilo de cota inexistente con fallback a `Standard`/`$DIMSTYLE`
+- [ ] BUG-13 — `$INSUNITS=0` sin forzar mm
+- [ ] BUG-14 — Ejes cartesianos sin atravesar el viewport
+- [ ] BUG-15 — HATCH con relleno even-odd correcto
+- [ ] BUG-16 — Alineación vertical de TEXT/MTEXT correcta
+- [ ] BUG-17 — Entidades BYBLOCK heredan el color del INSERT
+- [ ] BUG-18 — Dimensiones no alineadas respetan su rotación
+
+### Anexos
+
+- [ ] BUG-19 — Parser conserva las entidades de los bloques (Anexo A)
+- [ ] BUG-20 — Writer no corrompe las cotas al guardar (Anexo B)
+- [ ] BUG-21 — Writer conserva precisión, `370` y `62` BYLAYER (Anexo B)
+- [ ] BUG-22 — Writer emite header y tablas completas (Anexo B)
+- [ ] BUG-23 — Altura de fuente de cota coherente (Anexo C)
+- [ ] BUG-24 — Cotas casi-horizontales no se dibujan inclinadas (Anexo D)
+- [ ] BUG-25 — Barra superior sin texto vertical "Sin guardar" (Anexo E)
 
 ---
 
@@ -662,3 +704,93 @@ descarta el `dimtxt` original (2.5 u).
 - **Painter**: sustituir el piso fijo de 12 px por el LOD del documento
   (doc §C1/C2: texto de cota ~8 px, visible solo según zoom), de modo que la
   altura en unidades de mundo no se infle al alejar.
+
+---
+
+## 11. Anexo D — Cotas que se dibujan con inclinación (medición incorrecta)
+
+### 11.1 Síntoma
+
+Algunas cotas que deberían ser **horizontales** se dibujan con una **pequeña
+inclinación** (~5–10°, apenas perceptible) pero **suficiente para que el valor
+medido sea incorrecto**. Parece ocurrir "cuando hay otra cota muy cerca", como
+si dos cotas no pudieran estar en el mismo lugar y una se desplazara.
+
+### 11.2 Investigación: la app no desplaza ni colisiona cotas
+
+- **No existe lógica de colisión / desplazamiento entre cotas** en la app
+  (búsqueda de `collid / overlap / nudge / spread / separate` en `lib/` sin
+  resultados; no hay herramienta de creación de cotas, solo se leen del DXF).
+- La dirección de la línea de cota sale **100 % de los defpoints del archivo**:
+  `dxf_parser.dart:486` lee `x3/y3 = grupo 13/23` y `x4/y4 = grupo 14/24`, y
+  `cad_painter.dart:740-743` calcula la dirección unitaria `(14−13)/len`. Si el
+  archivo trae `13` e `14` con Y ligeramente distinta, la cota se dibuja
+  inclinada.
+- La inclinación **está en el archivo fuente** y no la introduce el guardado:
+  en `original.dxf` vs `modificado_por_aplicacion.dxf` los ángulos y defpoints
+  son **idénticos**.
+
+### 11.3 Datos verificados (example.dxf / original.dxf, 532 cotas)
+
+| Inclinación de la cota (13→14) | Cantidad |
+|---|---|
+| 0–1° (horizontales) | 189 |
+| 1–5° | 27 |
+| **5–15° (las "~10°" reportadas)** | **13** |
+| 15–85° (inclinadas reales: rampas/escaleras) | 78 |
+| 85–89° | 48 |
+| 89–90° (verticales) | 177 |
+
+Las 13 cotas de 5–15° son **cortas** (0.10–6.3 u) con una diferencia de Y de
+0.02–1.09 u en su base: el mismo error de dibujo en una base corta produce un
+ángulo visible. Por eso se percibe "cuando hay otra cota muy cerca": en las
+zonas densas las cotas son cortas y las pequeñas desalineaciones del original
+se vuelven evidentes.
+
+### 11.4 Por qué el valor mide mal (BUG-24)
+
+El painter muestra `formatLength(d.measurement ?? len)`
+(`cad_painter.dart:776-779`):
+
+- Solo **19/532** cotas traen grupo 42 (medición real) y **65/532** grupo 1
+  (texto); el resto (la mayoría) cae a `len = distance(13,14)`, que es la
+  longitud **inclinada**, no la proyección sobre el eje horizontal.
+- Con ~10° de inclinación, `len` supera a la luz horizontal en ~1.5 % —
+  suficiente para que la medida difiera del valor real del plano.
+
+### 11.5 Correcciones sugeridas (BUG-24)
+
+- **Painter**: enderezar a eje cuando la inclinación es menor a un umbral
+  (p. ej. 2–3°): usar la luz del eje dominante (horizontal/vertical) tanto para
+  la línea de cota como para el valor.
+- **Medición**: cuando no haya grupo 42, calcular la proyección de `(14−13)`
+  sobre el eje de la cota (grupo 50 si existe) en vez de la distancia directa.
+- Reusar el grupo 42 siempre que esté presente (ya se hace).
+
+---
+
+## 12. Anexo E — Barra superior con texto en vertical ("Sin guardar")
+
+### 12.1 Síntoma
+
+En la barra superior del visor (volver, deshacer, rehacer, guardar, capas,
+información, rotar, ajustar a pantalla) aparece un texto **en vertical, letra
+por letra**, que ensancha la barra y ocupa más pantalla de lo normal (leído por
+el usuario como "singulardar", pero es **"Sin guardar"**).
+
+### 12.2 Causa raíz (BUG-25)
+
+El indicador de cambios sin guardar es `Text('Sin guardar')` **sin `maxLines`
+ni `overflow`** (`viewer_screen.dart:557-561`). La barra es una `Row` con un
+`Expanded` para el nombre de archivo + 8 `IconButton`. Cuando el ancho
+disponible es escaso (pantalla chica / ventana estrecha), el `Expanded` se
+reduce y Flutter **envuelve la palabra carácter a carácter en vertical**
+(`S i n g u a r d a r`). Como el `Container` de la barra no tiene alto fijo,
+crece en altura y el menú ocupa más pantalla de lo normal.
+
+### 12.3 Corrección aplicada (v0.4.8)
+
+`viewer_screen.dart:557-561` — `maxLines: 1` + `overflow: TextOverflow.ellipsis`
+sobre el `Text('Sin guardar')`, igual que el nombre de archivo (líneas
+551-556). El indicador ya no envuelve en vertical y la barra mantiene su alto
+normal.

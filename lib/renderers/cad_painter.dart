@@ -22,6 +22,7 @@ import '../utils/coordinate_transform.dart';
 import '../utils/geometry.dart';
 import '../utils/line_types.dart';
 import '../utils/path_utils.dart';
+import '../utils/render_priority.dart';
 import '../utils/units.dart';
 import 'axis_renderer.dart';
 import 'grid_renderer.dart';
@@ -174,17 +175,30 @@ class CadPainter extends CustomPainter {
       final color = entityColorResolver(e);
       painted.add(_PaintEntity(e, color));
     }
-    // Orden: rellenos (HATCH y SOLID/TRACE) primero, luego el resto, para
-    // que las áreas no tapen líneas/textos.
-    painted.sort((a, b) {
-      bool isFill(CadEntity e) => e is CadHatch || e is CadSolid;
-      final ah = isFill(a.entity) ? 0 : 1;
-      final bh = isFill(b.entity) ? 0 : 1;
-      return ah.compareTo(bh);
+    // BUG-05 (doc §D): orden de prioridad de pintado por categoría
+    // (muros → columnas → puertas → ventanas → polilíneas → equipamiento →
+    // bloques → símbolos → textos → cotas → hatch). Se precomputa la
+    // prioridad una vez por entidad y se usa un sort ESTABLE (índice
+    // original como desempate) para que dentro de una misma categoría se
+    // conserve el orden del archivo.
+    final indexed = <(int, int, _PaintEntity)>[
+      for (var i = 0; i < painted.length; i++)
+        (renderPriority(painted[i].entity), i, painted[i]),
+    ];
+    indexed.sort((a, b) {
+      final byPriority = a.$1.compareTo(b.$1);
+      return byPriority != 0 ? byPriority : a.$2.compareTo(b.$2);
     });
-    for (final p in painted) {
+    // BUG-05 (doc §B): viewport clipping. Ninguna geometría se dibuja
+    // fuera de los límites exactos del viewport: save()/clipRect()/restore()
+    // recorta líneas, cotas, textos, hatches y entidades parcialmente
+    // visibles (XLINE/RAY incluidos cuando existan).
+    canvas.save();
+    canvas.clipRect(Offset.zero & size);
+    for (final (_, _, p) in indexed) {
       _paintEntity(canvas, p.entity, p.color);
     }
+    canvas.restore();
 
     // 5. Overlay de medición (temporal, sin crear entidades).
     _paintMeasure(canvas, vw, vh);

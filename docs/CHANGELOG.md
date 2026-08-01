@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.4.13] - 2026-08-01 — BUG-05: orden de pintado por prioridad + viewport clipping
+### Fixed
+- **BUG-05 (doc §D) — No había orden de prioridad de dibujo**: el painter solo separaba rellenos primero / resto después, por lo que cotas y textos se pintaban debajo de muros/polilíneas según el orden del archivo. Ahora se pinta por categoría (doc §D): muros → columnas → puertas → ventanas → polilíneas → equipamiento → bloques → símbolos → textos → cotas (los rellenos HATCH/SOLID/3DFACE van detrás de todo para no tapar líneas). La clasificación prioriza el **tipo** (un TEXT en capa "MUROS" es texto y va encima) y usa una heurística de capa solo para la geometría lineal
+- **BUG-05 (doc §B) — Sin viewport clipping**: ninguna geometría se recortaba a los límites del viewport; líneas/polilíneas/textos parcialmente visibles se dibujaban completos (y las auxiliares XLINE/RAY cuando existan). Ahora el pintado de entidades se envuelve en `canvas.save()/clipRect(Offset.zero & size)/restore()`
+### Added
+- `lib/utils/render_priority.dart` — `renderPriority(CadEntity)`: orden de pintado por categorías según doc §D (tipo primero, capa después), documentado y con valores 0–10
+- Test: `test/utils/render_priority_test.dart` (cada categoría, heurística por capa, el tipo gana sobre la capa, orden completo ascendente)
+### Changed
+- `lib/renderers/cad_painter.dart` — sort ESTABLE por prioridad (índice original como desempate, `List.sort` de Dart no es estable) + clipping al viewport en el bloque de entidades
+
 ## [0.4.12] - 2026-08-01 — BUG-23 (Anexo C): fuentes de cota desproporcionadas al guardar
 ### Fixed
 - **BUG CRÍTICO — las variables del HEADER nunca se parseaban**: el bloque que lee `$ACADVER`, `$INSUNITS`, `$EXTMIN/MAX` y `$DIMTXT` estaba anidado dentro de `if (pair.code == 0)`, pero esas variables llegan con **código de grupo 9** → jamás se ejecutaba. `files_cad/original.dxf` (AC1021, `$INSUNITS=0`) se leía como `AC1015` + mm. Ahora el parseo es un bloque propio `section == 'HEADER' && pair.code == 9` (verificado con probe real: `version=AC1021 insUnits=0 unitless`). Es la raíz parcial de BUG-13 (unidades forzadas a mm) y el habilitador del fallback `$DIMTXT`

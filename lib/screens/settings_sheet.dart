@@ -96,6 +96,16 @@ class SettingsSheet extends StatelessWidget {
                 value: vm.showCrosshair,
                 onChanged: vm.setShowCrosshair,
               ),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Joystick de paneo'),
+                subtitle: const Text(
+                  'Control transparente para mover la vista (abajo a la izquierda)',
+                  style: AppType.label,
+                ),
+                value: vm.showJoystick,
+                onChanged: vm.setShowJoystick,
+              ),
 
               const Divider(),
 

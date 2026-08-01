@@ -167,6 +167,9 @@ class CadViewModel extends ChangeNotifier {
   bool showAxes = true;
   bool showCrosshair = true;
 
+  /// Muestra el joystick transparente de paneo en el lienzo.
+  bool showJoystick = true;
+
   /// Escala del texto de cota (multiplicador sobre la altura del archivo).
   /// Default 1.0 = usa dimtxt del DIMSTYLE o la altura proporcional.
   double dimTextScale = 1.0;
@@ -1507,6 +1510,7 @@ class CadViewModel extends ChangeNotifier {
     }
     showAxes = prefs.getBool('showAxes') ?? true;
     showCrosshair = prefs.getBool('showCrosshair') ?? true;
+    showJoystick = prefs.getBool('showJoystick') ?? true;
     final snap = _loadSnapSettings(prefs);
     if (snap != null) {
       snapEngine.settings = snap;
@@ -1534,6 +1538,7 @@ class CadViewModel extends ChangeNotifier {
     await prefs.setInt('gridType', gridType.index);
     await prefs.setBool('showAxes', showAxes);
     await prefs.setBool('showCrosshair', showCrosshair);
+    await prefs.setBool('showJoystick', showJoystick);
     await prefs.setStringList(
       'recentFiles',
       recentFiles.map((r) => _jsonEncode(r.toJson())).toList(),
@@ -1578,6 +1583,12 @@ class CadViewModel extends ChangeNotifier {
     showCrosshair = v;
     _persist();
     transformVersion++;
+    notifyListeners();
+  }
+
+  void setShowJoystick(bool v) {
+    showJoystick = v;
+    _persist();
     notifyListeners();
   }
 

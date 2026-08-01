@@ -23,6 +23,7 @@ import '../renderers/layer_manager.dart';
 import '../theme/app_theme.dart';
 import '../theme/app_tokens.dart';
 import '../widgets/command_bar.dart';
+import '../widgets/joystick.dart';
 import '../widgets/property_panel.dart';
 import '../widgets/status_bar.dart';
 import '../widgets/toolbar_edit.dart';
@@ -461,6 +462,15 @@ class _ViewerScreenState extends State<ViewerScreen> {
             right: 0,
             child: CadStatusBar(),
           ),
+
+          // Joystick transparente de paneo (abajo a la izquierda, sobre la
+          // barra de edición). Se oculta/muestra desde Ajustes (BUG-28).
+          if (vm.showJoystick)
+            Positioned(
+              left: AppSpacing.lg,
+              bottom: 128,
+              child: Joystick(),
+            ),
 
           // Zoom controls (derecha, sobre status bar).
           Positioned(

@@ -1,5 +1,33 @@
 # Changelog
 
+## [0.4.8] - 2026-08-01 — Fix texto vertical "Sin guardar" en la barra superior
+### Fixed
+- **Texto en vertical que ensanchaba la barra superior del visor**: el indicador de cambios sin guardar (`Text('Sin guardar')`) no tenía `maxLines`/`overflow`; cuando la barra quedaba estrecha (botón volver + nombre de archivo + botones undo/redo/guardar/capas/info/rotar/ajustar), el área flexible se reducía y Flutter envolvía la palabra **carácter a carácter en vertical**, disparando la altura de la barra y ocupando más pantalla de lo normal. Ahora se limita a 1 línea con elipsis
+
+## [0.4.7] - 2026-08-01 — Soporte SOLID/TRACE (áreas rellenas) + compatibilidad example.dxf
+### Added
+- **Soporte completo de entidades `SOLID` y `TRACE`** (áreas rellenas 2D, marcador `AcDbTrace`): el parser las descartaba con "Entidad SOLID no soportada" — los planos con muros/columnas/rellenos (p. ej. `files_cad/example.dxf`, 1064 SOLID) perdían todo ese contenido. Nueva entidad `CadSolid` (4 esquinas 10-13/20-23, como 3DFACE; si la 3ª y 4ª coinciden es un triángulo) con render **relleno** (alpha 0.45 + contorno), bounds, selección, snap, hit-testing, transformaciones (mover/rotar/escalar), writer DXF (`SOLID`/`AcDbTrace`) y panel de propiedades (esquinas + área)
+- Test: `test/parsers/dxf_parser_test.dart` (SOLID cuadrilátero con AcDbTrace, TRACE triángulo, sin aviso de entidad no soportada)
+
+## [0.4.6] - 2026-08-01 — Fix capas invisibles en tema claro (contraste ACI)
+### Fixed
+- **Capas que no se veían (se veían las cotas pero no los vectores)**: `LayerManager` no adaptaba el color ACI al fondo del lienzo (la doc lo prometía: "el tema adapte el ACI 7 blanco → oscuro en tema claro", pero nunca se implementó). En el tema **Claro** (lienzo blanco), las capas de color blanco/amarillo (ACI 7, 2…) eran **invisibles**; las cotas (capa de color saturado) sí se veían. Ahora se aplica una **adaptación de contraste WCAG**: `aci_colors.ensureContrast` oscurece colores claros sobre fondos claros y aclara colores oscuros sobre fondos oscuros, garantizando ≥ 3:1 de contraste
+### Added
+- `lib/utils/aci_colors.dart` — `relativeLuminance`, `contrastRatio` y `ensureContrast` (WCAG, interpolación hasta contraste mínimo)
+- `LayerManager.canvasBackground` (ARGB) + adaptación en `entityColor` y `layerColor`; `viewer_screen` y `layer_panel` pasan `palette.canvasBackground`
+- Test: `test/utils/aci_colors_test.dart` (luminancia, contraste, blanco→oscuro en claro, blanco intacto en oscuro, amarillo/rojo, gris oscuro aclarado)
+
+## [0.4.5] - 2026-08-01 — Giro de vista 180° (DXF con UCS rotado)
+### Added
+- **Giro de vista 180° en el plano** (sentido horario): algunos DXF traen el dibujo en un UCS rotado 180° o con vector de extrusión (0,0,-1) y se veían **girados en plano** (no espejados). Nuevo botón `⟳` (Icons.threesixty) en la AppBar del visor que rota la vista 180° manteniendo el centro del viewport; **se persiste por archivo** (shared_preferences `rotatedFiles`) y se restaura al reabrir el mismo archivo
+- `CoordinateTransform.rotate180`: niega ambos ejes mundo→pantalla (`sx = -wx·s+ox`, `sy = +wy·s+oy`), con inversas coherentes, `fitToScreen(rotate180:)`, nuevo `zoomAt()` (mantiene el punto bajo el cursor con rotación) e `isVisible` robusto ante el orden de esquinas invertido
+- `CadViewModel.rotateView` + `toggleRotateView(vw, vh)` (mantiene el punto del centro fijo: `offsetX = vw - offsetX`, `offsetY = vh - offsetY`); `fitToScreen`/`zoomAt`/`updateCursor` y `viewer_screen._screenToWorld` usan el transform (antes fórmulas crudas)
+- `CadPainter._angleOffset` (π si rotate180) aplicado a arcos, elipses, TEXT/MTEXT y flechas de cota; `_visibleWorldRect`/`_entityScreenBounds` y `GridRenderer` ordenan X **e** Y (antes solo Y)
+### Fixed
+- **GripRenderer no respetaba offset/inversión de Y**: solo usaba `g.x·scale`. Ahora recibe el `CoordinateTransform` completo y usa `worldToScreenX/Y` (los grips ya quedaban mal ubicados al hacer pan con offset ≠ 0)
+### Added
+- Tests: `coordinate_transform_test` (rotate180: round-trip, fitToScreen centrado, zoomAt, isVisible) y `cad_view_model_test` (toggle mantiene centro, persistencia por archivo)
+
 ## [0.4.4] - 2026-08-01 — Fix panel de propiedades, grosor de línea y cotas descomunales
 ### Fixed
 - **Longitud de línea incorrecta en el panel de propiedades**: `distanceMm` era un placeholder que devolvía `d²·0.5` en vez de la distancia real → una línea de 6.01 mm mostraba "18.05 mm". Ahora usa `distance()` real de geometry; eliminada la fila basura "Inicio"

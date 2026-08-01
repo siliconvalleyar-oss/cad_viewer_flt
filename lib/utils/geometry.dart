@@ -185,6 +185,27 @@ CadPoint3? bulgeCenter(double x1, double y1, double x2, double y2, double b) {
   return CadPoint3(midX + perpX * h, midY + perpY * h);
 }
 
+/// `true` si el punto está dentro del polígono (ray casting; semi-abierto).
+///
+/// El punto exactamente sobre el borde cuenta como dentro. Útil para
+/// hit-testing de áreas rellenas (SOLID/TRACE, HATCH).
+bool pointInPolygon(double px, double py, List<CadPoint3> pts) {
+  if (pts.length < 3) {
+    return false;
+  }
+  var inside = false;
+  for (var i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+    final a = pts[i];
+    final b = pts[j];
+    final crosses = (a.y > py) != (b.y > py) &&
+        px < (b.x - a.x) * (py - a.y) / (b.y - a.y) + a.x;
+    if (crosses) {
+      inside = !inside;
+    }
+  }
+  return inside;
+}
+
 /// Área de un polígono (fórmula del cordón / shoelace). Signo = orientación.
 double polygonArea(List<CadPoint3> pts) {
   if (pts.length < 3) {
@@ -297,6 +318,31 @@ double distanceToEntity(CadEntity e, double px, double py) {
             px, py, f.corners[i].x, f.corners[i].y,
             f.corners[i + 1].x, f.corners[i + 1].y,
           ),
+        );
+      }
+      return best;
+    case final CadSolid s:
+      // Área rellena: un clic en el interior también selecciona (punto en
+      // polígono); si está fuera, distancia mínima al contorno.
+      if (pointInPolygon(px, py, s.corners)) {
+        return 0;
+      }
+      var best = double.infinity;
+      for (var i = 0; i < s.corners.length - 1; i++) {
+        best = math.min(
+          best,
+          distancePointToSegment(
+            px, py, s.corners[i].x, s.corners[i].y,
+            s.corners[i + 1].x, s.corners[i + 1].y,
+          ),
+        );
+      }
+      if (s.corners.length > 2) {
+        final first = s.corners.first;
+        final last = s.corners.last;
+        best = math.min(
+          best,
+          distancePointToSegment(px, py, last.x, last.y, first.x, first.y),
         );
       }
       return best;

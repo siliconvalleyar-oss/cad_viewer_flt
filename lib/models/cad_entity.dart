@@ -1185,6 +1185,67 @@ class CadDim extends CadEntity {
       );
 }
 
+/// Sólido 2D (SOLID/TRACE): cuadrilátero o triángulo relleno.
+///
+/// 4 esquinas (grupos 10-13/20-23); si la 3ª y 4ª coinciden es un
+/// triángulo. Se renderiza relleno (con el color de la entidad) y se
+/// proyecta en 2D ignorando Z.
+class CadSolid extends CadEntity {
+  const CadSolid({
+    required super.handle,
+    required super.layer,
+    super.color,
+    super.lineType,
+    super.lineWeight,
+    required this.corners,
+  });
+
+  /// 4 esquinas (z puede diferir; se ignora al proyectar).
+  final List<CadPoint3> corners;
+
+  @override
+  CadEntityType get type => CadEntityType.solid;
+
+  @override
+  CadSolid copyWith({
+    String? handle,
+    String? layer,
+    Object? color = unset,
+    Object? lineType = unset,
+    Object? lineWeight = unset,
+    List<CadPoint3>? corners,
+  }) =>
+      CadSolid(
+        handle: handle ?? this.handle,
+        layer: layer ?? this.layer,
+        color: identical(color, unset) ? this.color : color as int?,
+        lineType: identical(lineType, unset) ? this.lineType : lineType as String?,
+        lineWeight:
+            identical(lineWeight, unset) ? this.lineWeight : lineWeight as double?,
+        corners: corners ?? this.corners,
+      );
+
+  @override
+  bool operator ==(Object other) =>
+      other is CadSolid &&
+      other.handle == handle &&
+      other.layer == layer &&
+      other.color == color &&
+      other.lineType == lineType &&
+      other.lineWeight == lineWeight &&
+      const ListEquality<CadPoint3>().equals(other.corners, corners);
+
+  @override
+  int get hashCode => Object.hash(
+        handle,
+        layer,
+        color,
+        lineType,
+        lineWeight,
+        const ListEquality<CadPoint3>().hash(corners),
+      );
+}
+
 /// Cara 3D (solo lectura en v1.0; proyección 2D).
 class Cad3dFace extends CadEntity {
   const Cad3dFace({

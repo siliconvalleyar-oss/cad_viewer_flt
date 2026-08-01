@@ -161,6 +161,14 @@ class PropertyPanel extends StatelessWidget {
         rows.add(_row('Tipo', d.dimType.name));
       case final Cad3dFace f:
         rows.add(_row('Esquinas', '${f.corners.length}'));
+      case final CadSolid s:
+        rows.add(_row('Esquinas', '${s.corners.length}'));
+        if (s.corners.length >= 3) {
+          rows.add(_row(
+            'Área',
+            '${polygonArea(s.corners).toStringAsFixed(2)} mm²',
+          ));
+        }
     }
     return rows;
   }
@@ -227,5 +235,6 @@ class PropertyPanel extends StatelessWidget {
         CadEntityType.spline => 'Spline',
         CadEntityType.dim => 'Dimensión',
         CadEntityType.face3d => 'Cara 3D',
+        CadEntityType.solid => 'Sólido',
       };
 }

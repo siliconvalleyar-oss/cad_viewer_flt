@@ -125,6 +125,10 @@ Bounds _entityBounds(CadEntity entity) {
       for (final pt in f.corners) {
         bounds = bounds.expandToIncludePoint(pt.x, pt.y);
       }
+    case final CadSolid s:
+      for (final pt in s.corners) {
+        bounds = bounds.expandToIncludePoint(pt.x, pt.y);
+      }
   }
   return bounds;
 }

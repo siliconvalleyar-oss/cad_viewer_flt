@@ -5,6 +5,8 @@
 /// capa, override de tema) vive en `renderers/layer_manager.dart`.
 library;
 
+import 'dart:math' as math;
+
 /// Convierte un índice ACI (1–255) a un color ARGB.
 ///
 /// Implementa la paleta estándar de AutoCAD: 1–9 fijos, 10–249 por fórmula
@@ -45,6 +47,62 @@ const List<int> _baseColors = <int>[
 ];
 
 int _rgb(int r, int g, int b) => (0xFF << 24) | (r << 16) | (g << 8) | b;
+
+/// Luminancia relativa WCAG (0 = negro, 1 = blanco).
+double relativeLuminance(int argb) {
+  double channel(int c) {
+    final s = c / 255.0;
+    return s <= 0.03928 ? s / 12.92 : math.pow((s + 0.055) / 1.055, 2.4).toDouble();
+  }
+
+  return 0.2126 * channel((argb >> 16) & 0xFF) +
+      0.7152 * channel((argb >> 8) & 0xFF) +
+      0.0722 * channel(argb & 0xFF);
+}
+
+/// Contraste WCAG entre dos colores ARGB (1 = mínimo, 21 = máximo).
+double contrastRatio(int a, int b) => _contrastAgainst(a, relativeLuminance(b));
+
+/// Interpola [from]→[to] en [t] ∈ [0,1] (canales RGB).
+int _lerpArgb(int from, int to, double t) {
+  int ch(int f, int tt) => (f + (tt - f) * t).round().clamp(0, 255);
+  return (0xFF << 24) |
+      (ch((from >> 16) & 0xFF, (to >> 16) & 0xFF) << 16) |
+      (ch((from >> 8) & 0xFF, (to >> 8) & 0xFF) << 8) |
+      ch(from & 0xFF, to & 0xFF);
+}
+
+/// Ajusta un color ARGB para garantizar contraste con [background].
+///
+/// Si el contraste ya es ≥ [minContrast] devuelve el color sin cambios; si
+/// no, oscurece el color cuando el fondo es claro (o lo aclara cuando el
+/// fondo es oscuro) hasta alcanzar el mínimo. Esto evita que capas de color
+/// blanco/amarillo (ACI 7, 2…) desaparezcan sobre el lienzo claro del tema
+/// "Claro", o que colores muy oscuros se pierdan sobre fondos oscuros.
+int ensureContrast(int argb, int background, {double minContrast = 3.0}) {
+  // La luminancia del fondo se calcula una sola vez (no por iteración).
+  final bgLum = relativeLuminance(background);
+  if (_contrastAgainst(argb, bgLum) >= minContrast) {
+    return argb;
+  }
+  final target = bgLum > 0.5 ? 0xFF111111 : 0xFFFFFFFF;
+  // Barrido fino hacia el extremo opuesto hasta cumplir contraste.
+  for (var t = 0.05; t <= 1.0; t += 0.05) {
+    final mixed = _lerpArgb(argb, target, t);
+    if (_contrastAgainst(mixed, bgLum) >= minContrast) {
+      return mixed;
+    }
+  }
+  return target;
+}
+
+/// Contraste de un color contra una luminancia de fondo ya calculada.
+double _contrastAgainst(int argb, double bgLum) {
+  final fgLum = relativeLuminance(argb);
+  final hi = math.max(fgLum, bgLum);
+  final lo = math.min(fgLum, bgLum);
+  return (hi + 0.05) / (lo + 0.05);
+}
 
 int _hslToArgb(double h, double s, double l) {
   final c = (1 - (2 * l - 1).abs()) * s;

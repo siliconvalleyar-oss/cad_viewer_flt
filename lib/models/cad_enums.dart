@@ -20,6 +20,7 @@ enum CadEntityType {
   spline,
   dim,
   face3d,
+  solid,
 }
 
 /// Tipo de dimensión según los bits bajos de `70` en DXF (FORMATS §4).

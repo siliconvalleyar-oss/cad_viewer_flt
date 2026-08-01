@@ -4,8 +4,9 @@
 /// que `DxfParserWrapper` implementa un parseo ASCII directo por pares
 /// (código de grupo, valor) que cubre: LINE, CIRCLE, ARC, ELLIPSE,
 /// LWPOLYLINE, POLYLINE pesada (R12/LibreCAD, con VERTEX/SEQEND), TEXT,
-/// MTEXT, INSERT (bloques), POINT, HATCH básico, SPLINE, DIMENSION y 3DFACE,
-/// más HEADER, TABLES (LAYER), BLOCKS y ENTITIES.
+/// MTEXT, INSERT (bloques), POINT, HATCH básico, SPLINE, DIMENSION, 3DFACE
+/// y SOLID/TRACE (áreas rellenas), más HEADER, TABLES (LAYER), BLOCKS y
+/// ENTITIES.
 library;
 
 import 'dart:convert';
@@ -494,6 +495,20 @@ class DxfParserWrapper {
         );
       case '3DFACE':
         return Cad3dFace(
+          handle: handle, layer: layer, color: effColor,
+          lineType: lineType, lineWeight: lineWeight,
+          corners: [
+            CadPoint3(d(10), d(20), d(30)),
+            CadPoint3(d(11), d(21), d(31)),
+            CadPoint3(d(12), d(22), d(32)),
+            CadPoint3(d(13), d(23), d(33)),
+          ],
+        );
+      case 'SOLID':
+      case 'TRACE':
+        // SOLID/TRACE: 4 esquinas (10-13/20-23) como 3DFACE; si la 3ª y 4ª
+        // coinciden es un triángulo. Se rellena con el color de la entidad.
+        return CadSolid(
           handle: handle, layer: layer, color: effColor,
           lineType: lineType, lineWeight: lineWeight,
           corners: [

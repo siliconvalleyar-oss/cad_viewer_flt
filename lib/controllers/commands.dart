@@ -364,6 +364,10 @@ CadEntity _move(CadEntity e, double dx, double dy) {
       return f.copyWith(
         corners: f.corners.map((p) => p.copyWith(x: p.x + dx, y: p.y + dy)).toList(),
       );
+    case final CadSolid s:
+      return s.copyWith(
+        corners: s.corners.map((p) => p.copyWith(x: p.x + dx, y: p.y + dy)).toList(),
+      );
   }
 }
 
@@ -459,6 +463,15 @@ CadEntity _rotate(CadEntity e, double angle, double cx, double cy) {
             })
             .toList(),
       );
+    case final CadSolid s:
+      return s.copyWith(
+        corners: s.corners
+            .map((p) {
+              final (x, y) = rot(p.x, p.y);
+              return p.copyWith(x: x, y: y);
+            })
+            .toList(),
+      );
   }
 }
 
@@ -531,6 +544,10 @@ CadEntity _scale(CadEntity e, double factor, double cx, double cy) {
       return f.copyWith(
         corners: f.corners.map((p) => p.copyWith(x: sc(p.x, cx), y: sc(p.y, cy))).toList(),
       );
+    case final CadSolid s:
+      return s.copyWith(
+        corners: s.corners.map((p) => p.copyWith(x: sc(p.x, cx), y: sc(p.y, cy))).toList(),
+      );
   }
 }
 
@@ -547,4 +564,5 @@ String _typeLabel(CadEntity e) => switch (e) {
       CadSpline() => 'spline',
       CadDim() => 'dimensión',
       Cad3dFace() => 'cara 3D',
+      CadSolid() => 'sólido',
     };

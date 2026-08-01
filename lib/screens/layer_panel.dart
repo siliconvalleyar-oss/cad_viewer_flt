@@ -29,7 +29,10 @@ class LayerPanel extends StatelessWidget {
     final palette = AppThemes.byMode(
       context.select<CadViewModel, AppThemeMode>((v) => v.themeMode),
     );
-    final manager = LayerManager(vm.document?.cadFile ?? const CadFile(fileName: ''));
+    final manager = LayerManager(
+      vm.document?.cadFile ?? const CadFile(fileName: ''),
+      canvasBackground: palette.canvasBackground.toARGB32(),
+    );
 
     return Align(
       alignment: Alignment.centerRight,

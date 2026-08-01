@@ -163,5 +163,11 @@ Bounds entityBounds(CadEntity e) {
         b = b.expandToIncludePoint(p.x, p.y);
       }
       return b;
+    case final CadSolid s:
+      var b = const Bounds.empty();
+      for (final p in s.corners) {
+        b = b.expandToIncludePoint(p.x, p.y);
+      }
+      return b;
   }
 }

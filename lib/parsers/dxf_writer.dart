@@ -472,6 +472,16 @@ class DxfWriter {
           _pair(b, 20 + i, c.y);
           _pair(b, 30 + i, c.z);
         }
+      case final CadSolid s:
+        b.writeln('  0');
+        b.writeln('SOLID');
+        _common(b, e, r12, 'AcDbTrace');
+        for (var i = 0; i < s.corners.length && i < 4; i++) {
+          final c = s.corners[i];
+          _pair(b, 10 + i, c.x);
+          _pair(b, 20 + i, c.y);
+          _pair(b, 30 + i, c.z);
+        }
     }
   }
 

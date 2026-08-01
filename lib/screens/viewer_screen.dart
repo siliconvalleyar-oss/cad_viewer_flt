@@ -557,6 +557,8 @@ class _ViewerScreenState extends State<ViewerScreen> {
                   if (vm.dirty)
                     Text(
                       'Sin guardar',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                       style: AppType.caption.copyWith(color: palette.error),
                     ),
                 ],
@@ -671,7 +673,10 @@ class _ViewerScreenState extends State<ViewerScreen> {
   }
 
   CadPainter _buildPainter(CadViewModel vm, AppThemePalette palette) {
-    final layerManager = LayerManager(vm.document?.cadFile ?? const CadFile(fileName: ''));
+    final layerManager = LayerManager(
+      vm.document?.cadFile ?? const CadFile(fileName: ''),
+      canvasBackground: palette.canvasBackground.toARGB32(),
+    );
     return CadPainter(
       transform: vm.transform,
       entities: vm.visibleEntities,

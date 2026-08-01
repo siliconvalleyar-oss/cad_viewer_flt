@@ -351,6 +351,10 @@ class SnapEngine {
         for (final c in f.corners) {
           candidates.add(SnapResult(point: c, mode: SnapMode.endpoint, entity: e));
         }
+      case final CadSolid s:
+        for (final c in s.corners) {
+          candidates.add(SnapResult(point: c, mode: SnapMode.endpoint, entity: e));
+        }
       case CadHatch():
         break;
     }

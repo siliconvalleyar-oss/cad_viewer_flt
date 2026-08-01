@@ -174,11 +174,12 @@ class CadPainter extends CustomPainter {
       final color = entityColorResolver(e);
       painted.add(_PaintEntity(e, color));
     }
-    // Orden: sombreados primero, luego el resto.
+    // Orden: rellenos (HATCH y SOLID/TRACE) primero, luego el resto, para
+    // que las áreas no tapen líneas/textos.
     painted.sort((a, b) {
-      bool isHatch(CadEntity e) => e is CadHatch;
-      final ah = isHatch(a.entity) ? 0 : 1;
-      final bh = isHatch(b.entity) ? 0 : 1;
+      bool isFill(CadEntity e) => e is CadHatch || e is CadSolid;
+      final ah = isFill(a.entity) ? 0 : 1;
+      final bh = isFill(b.entity) ? 0 : 1;
       return ah.compareTo(bh);
     });
     for (final p in painted) {
@@ -318,6 +319,32 @@ class CadPainter extends CustomPainter {
         }
         path.close();
         _strokePath(canvas, path, stroke, dash);
+      case final CadSolid s:
+        // SOLID/TRACE: área rellena con el color de la entidad y contorno
+        // delgado. Si la 3ª y 4ª esquina coinciden, es un triángulo.
+        if (s.corners.length < 3 || polygonArea(s.corners) < 1e-9) {
+          break; // Degenerado (todos los puntos coinciden).
+        }
+        final fill = Paint()
+          ..color = color.withValues(alpha: 0.45)
+          ..style = PaintingStyle.fill;
+        final solidPath = Path()
+          ..moveTo(
+            transform.worldToScreenX(s.corners.first.x),
+            transform.worldToScreenY(s.corners.first.y),
+          );
+        for (final c in s.corners.skip(1)) {
+          solidPath.lineTo(transform.worldToScreenX(c.x), transform.worldToScreenY(c.y));
+        }
+        solidPath.close();
+        canvas.drawPath(solidPath, fill);
+        canvas.drawPath(
+          solidPath,
+          Paint()
+            ..color = color
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 1,
+        );
     }
   }
 
@@ -590,6 +617,13 @@ class CadPainter extends CustomPainter {
         return f.copyWith(
           corners: [
             for (final p in f.corners)
+              p.copyWith(x: tx(p.x, p.y), y: ty(p.x, p.y)),
+          ],
+        );
+      case final CadSolid s:
+        return s.copyWith(
+          corners: [
+            for (final p in s.corners)
               p.copyWith(x: tx(p.x, p.y), y: ty(p.x, p.y)),
           ],
         );
@@ -1005,6 +1039,12 @@ class CadPainter extends CustomPainter {
       case final Cad3dFace f:
         var b = const Bounds.empty();
         for (final p in f.corners) {
+          b = b.expandToIncludePoint(p.x, p.y);
+        }
+        return b;
+      case final CadSolid s:
+        var b = const Bounds.empty();
+        for (final p in s.corners) {
           b = b.expandToIncludePoint(p.x, p.y);
         }
         return b;

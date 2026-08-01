@@ -142,10 +142,10 @@ class CadPainter extends CustomPainter {
   final GripRenderer _grips = const GripRenderer();
   final SnapRenderer _snap = const SnapRenderer();
 
-  /// Desfase de ángulo de pantalla cuando la vista está rotada 180°:
-  /// con la Y invertida el ángulo mundo→pantalla es -θ; con la rotación
-  /// extra es π-θ (se suma π al ángulo ya negado).
-  double get _angleOffset => transform.rotate180 ? math.pi : 0;
+  // Nota: el mapeo de ángulos mundo→pantalla vive en el transform
+  // (screenAngle/sweepSign/screenVectorAngle) porque un espejo REFLEJA el
+  // ángulo (θ→θ+π espejo X, θ→θ espejo Y) y el giro 180° lo rota (-θ+π);
+  // usar un solo offset π era incorrecto para archivos espejados.
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -275,14 +275,12 @@ class CadPainter extends CustomPainter {
         final cy = transform.worldToScreenY(a.cy);
         final r = a.radius * transform.scale;
         final sweep = angleDelta(a.startAngle, a.endAngle);
-        // Con la Y invertida, los ángulos del mundo se niegan en pantalla;
-        // con la vista rotada 180° se añade π.
         _strokePath(
           canvas,
           Path()..addArc(
             Rect.fromCircle(center: Offset(cx, cy), radius: r),
-            -a.startAngle + _angleOffset,
-            -sweep,
+            transform.screenAngle(a.startAngle),
+            transform.sweepSign * sweep,
           ),
           stroke,
           dash,
@@ -387,9 +385,7 @@ class CadPainter extends CustomPainter {
     }
     canvas.save();
     canvas.translate(cx, cy);
-    // Y invertida: la rotación del mundo se niega en pantalla; con la vista
-    // rotada 180° se añade π.
-    canvas.rotate(-el.rotation + _angleOffset);
+    canvas.rotate(transform.screenAngle(el.rotation));
     _strokePath(
       canvas,
       Path()..addOval(Rect.fromCenter(center: Offset.zero, width: w, height: h)),
@@ -474,9 +470,7 @@ class CadPainter extends CustomPainter {
     final sy = transform.worldToScreenY(wy);
     canvas.save();
     canvas.translate(sx, sy);
-    // Y invertida: la rotación del mundo se niega en pantalla; con la vista
-    // rotada 180° se añade π.
-    canvas.rotate(-rotation + _angleOffset);
+    canvas.rotate(transform.screenAngle(rotation));
     final dx = halign == 1
         ? -painter.width / 2
         : halign == 2
@@ -753,9 +747,7 @@ class CadPainter extends CustomPainter {
     Color color,
   ) {
     final s = math.max(arrowSize * transform.scale, 4.0); // px mínimos
-    // Con la Y invertida, la dirección del mundo se niega en pantalla; con
-    // la vista rotada 180° se añade π.
-    final ang = math.atan2(-dirY, dirX) + _angleOffset;
+    final ang = transform.screenVectorAngle(dirX, dirY);
     final a1 = ang + 2.6; // ~150°
     final a2 = ang - 2.6;
     final path = Path()

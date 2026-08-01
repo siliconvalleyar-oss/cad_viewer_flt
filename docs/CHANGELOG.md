@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.4.14] - 2026-08-01 — Espejo horizontal/vertical de la vista (archivos espejados)
+### Added
+- **Espejo horizontal (niega X) y espejo vertical (no invierte Y) de la vista**: algunos DXF vienen **espejados** (no solo rotados) y no había forma de corregirlo. Nuevos `flipX`/`flipY` en `CoordinateTransform` (combinados con `rotate180` por XOR: giro+espejoX = espejoY), `CadViewModel.flipXView`/`flipYView` con `toggleFlipXView`/`toggleFlipYView` (mantienen el punto del mundo en el centro del viewport, igual que el giro) y persistencia por archivo (`flippedXFiles`/`flippedYFiles` en shared_preferences)
+- **Mapeo de ángulos generalizado en el painter**: antes solo existía `_angleOffset = rotate180 ? π : 0`, correcto para giros pero **incorrecto para espejos** (un espejo REFLEJA el ángulo, no suma π). Ahora `transform.screenAngle(θ)` = -θ (base), -θ+π (giro), θ+π (espejo X), θ (espejo Y); `sweepSign` (sentido de arcos) y `screenVectorAngle` (flechas de cota) — aplicados en arcos, elipses, TEXT/MTEXT y flechas de cota
+- **Menú "Orientación de vista" en la AppBar** (icono `flip`, resaltado si hay alguna activa): Girar 180°, Espejo horizontal y Espejo vertical con marca de activo (reemplaza el botón único de giro para no saturar la barra)
+### Fixed
+- Arcos, elipses y textos se dibujaban con orientación errónea cuando la vista estaba espejada (un espejo no es una rotación)
+### Changed
+- `lib/utils/coordinate_transform.dart` — `signX`/`signY` (XOR de rotate180/flipX/flipY), `screenAngle`/`sweepSign`/`screenVectorAngle`, `fitToScreen`/`zoomAt` con flips
+- `lib/controllers/cad_view_model.dart` — `flipXView`/`flipYView`, toggles, `_restoreViewOrientation` y `_persistOrientation`
+- `lib/renderers/cad_painter.dart` — usa los helpers de ángulo del transform
+- `lib/screens/viewer_screen.dart` — PopupMenuButton de orientación
+### Added
+- Tests: `test/utils/coordinate_transform_test.dart` (flipX/flipY round-trip, XOR con giro, fit/zoom con flips, screenAngle/sweepSign/screenVectorAngle por caso) y `test/controllers/cad_view_model_test.dart` (toggles mantienen el centro, persistencia por archivo)
+
 ## [0.4.13] - 2026-08-01 — BUG-05: orden de pintado por prioridad + viewport clipping
 ### Fixed
 - **BUG-05 (doc §D) — No había orden de prioridad de dibujo**: el painter solo separaba rellenos primero / resto después, por lo que cotas y textos se pintaban debajo de muros/polilíneas según el orden del archivo. Ahora se pinta por categoría (doc §D): muros → columnas → puertas → ventanas → polilíneas → equipamiento → bloques → símbolos → textos → cotas (los rellenos HATCH/SOLID/3DFACE van detrás de todo para no tapar líneas). La clasificación prioriza el **tipo** (un TEXT en capa "MUROS" es texto y va encima) y usa una heurística de capa solo para la geometría lineal

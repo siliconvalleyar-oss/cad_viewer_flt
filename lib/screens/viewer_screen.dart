@@ -599,18 +599,53 @@ class _ViewerScreenState extends State<ViewerScreen> {
               tooltip: 'Información',
               onPressed: () => _info(vm, context),
             ),
-            IconButton(
+            // Orientación de vista: giro 180° + espejos H/V (archivos con
+            // UCS rotado o espejado). Menú para no saturar la AppBar.
+            PopupMenuButton<String>(
               icon: Icon(
-                Icons.threesixty,
-                color: vm.rotateView ? palette.selection : null,
+                Icons.flip,
+                color: vm.rotateView || vm.flipXView || vm.flipYView
+                    ? palette.selection
+                    : null,
               ),
-              tooltip: 'Girar vista 180° (archivos con UCS rotado)',
-              onPressed: _viewportSize == Size.zero
-                  ? null
-                  : () => vm.toggleRotateView(
-                        _viewportSize.width,
-                        _viewportSize.height,
-                      ),
+              tooltip: 'Orientación de vista (giro 180° / espejo)',
+              enabled: _viewportSize != Size.zero,
+              onSelected: (value) {
+                switch (value) {
+                  case 'rotate':
+                    vm.toggleRotateView(
+                      _viewportSize.width,
+                      _viewportSize.height,
+                    );
+                  case 'flipX':
+                    vm.toggleFlipXView(
+                      _viewportSize.width,
+                      _viewportSize.height,
+                    );
+                  case 'flipY':
+                    vm.toggleFlipYView(
+                      _viewportSize.width,
+                      _viewportSize.height,
+                    );
+                }
+              },
+              itemBuilder: (context) => [
+                CheckedPopupMenuItem(
+                  value: 'rotate',
+                  checked: vm.rotateView,
+                  child: const Text('Girar vista 180°'),
+                ),
+                CheckedPopupMenuItem(
+                  value: 'flipX',
+                  checked: vm.flipXView,
+                  child: const Text('Espejo horizontal'),
+                ),
+                CheckedPopupMenuItem(
+                  value: 'flipY',
+                  checked: vm.flipYView,
+                  child: const Text('Espejo vertical'),
+                ),
+              ],
             ),
             IconButton(
               icon: const Icon(Icons.fit_screen),

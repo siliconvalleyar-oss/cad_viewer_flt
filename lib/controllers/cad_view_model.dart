@@ -148,6 +148,14 @@ class CadViewModel extends ChangeNotifier {
   /// rotado / extrusión (0,0,-1)). Persistido por archivo.
   bool rotateView = false;
 
+  /// `true` = espejo horizontal de la vista (fix de archivos espejados).
+  /// Persistido por archivo.
+  bool flipXView = false;
+
+  /// `true` = espejo vertical de la vista (fix de archivos espejados).
+  /// Persistido por archivo.
+  bool flipYView = false;
+
   /// Resultado de snap activo (para el indicador visual).
   SnapResult? activeSnap;
 
@@ -156,6 +164,8 @@ class CadViewModel extends ChangeNotifier {
         offsetX: offsetX,
         offsetY: offsetY,
         rotate180: rotateView,
+        flipX: flipXView,
+        flipY: flipYView,
       );
 
   // -------------------------------------------------------------------------
@@ -285,10 +295,12 @@ class CadViewModel extends ChangeNotifier {
     currentPath = path ?? file.fileName;
     units = file.header.units == UnitsType.unitless ? UnitsType.mm : file.header.units;
     warnings = result.warnings;
-    // Restaura la rotación de vista persistida para este archivo (fix de
-    // UCS rotado 180° en algunos DXF).
+    // Restaura la orientación de vista persistida para este archivo (fix
+    // de UCS rotado 180° y/o espejado en algunos DXF).
     rotateView = false;
-    await _restoreRotateView(currentPath);
+    flipXView = false;
+    flipYView = false;
+    await _restoreViewOrientation(currentPath);
     commandStack.clear();
     selection.clear();
     grips = const [];
@@ -305,14 +317,19 @@ class CadViewModel extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Restaura la rotación de vista 180° persistida para un archivo.
-  Future<void> _restoreRotateView(String? key) async {
+  /// Restaura la orientación de vista (giro 180° + espejos) persistida
+  /// para un archivo.
+  Future<void> _restoreViewOrientation(String? key) async {
     if (key == null || key.isEmpty) {
       return;
     }
     final prefs = await SharedPreferences.getInstance();
-    final list = prefs.getStringList('rotatedFiles') ?? const [];
-    rotateView = list.contains(key);
+    final rotated = prefs.getStringList('rotatedFiles') ?? const [];
+    final flippedX = prefs.getStringList('flippedXFiles') ?? const [];
+    final flippedY = prefs.getStringList('flippedYFiles') ?? const [];
+    rotateView = rotated.contains(key);
+    flipXView = flippedX.contains(key);
+    flipYView = flippedY.contains(key);
   }
 
   /// Parsea en un Isolate (contrato JSON, SERIALIZATION §4).
@@ -443,6 +460,8 @@ class CadViewModel extends ChangeNotifier {
       viewportW,
       viewportH,
       rotate180: rotateView,
+      flipX: flipXView,
+      flipY: flipYView,
     );
     scale = t.scale;
     offsetX = t.offsetX;
@@ -493,19 +512,46 @@ class CadViewModel extends ChangeNotifier {
     offsetY = viewportH - offsetY;
     transformVersion++;
     notifyListeners();
+    await _persistOrientation('rotatedFiles', rotateView);
+  }
+
+  /// Alterna el espejo horizontal de la vista (niega X en pantalla, cada
+  /// punto pasa a (W - sx, sy)) manteniendo el centro fijo, y persiste.
+  Future<void> toggleFlipXView(double viewportW, double viewportH) async {
+    flipXView = !flipXView;
+    offsetX = viewportW - offsetX;
+    transformVersion++;
+    notifyListeners();
+    await _persistOrientation('flippedXFiles', flipXView);
+  }
+
+  /// Alterna el espejo vertical de la vista (no invierte Y en pantalla,
+  /// cada punto pasa a (sx, H - sy)) manteniendo el centro fijo, y persiste.
+  Future<void> toggleFlipYView(double viewportW, double viewportH) async {
+    flipYView = !flipYView;
+    offsetY = viewportH - offsetY;
+    transformVersion++;
+    notifyListeners();
+    await _persistOrientation('flippedYFiles', flipYView);
+  }
+
+  /// Persiste [enabled] del archivo actual en la lista [prefsKey]
+  /// (rotatedFiles / flippedXFiles / flippedYFiles).
+  Future<void> _persistOrientation(String prefsKey, bool enabled) async {
     final prefs = await SharedPreferences.getInstance();
     final key = currentPath ?? _document?.cadFile.fileName ?? '';
-    if (key.isNotEmpty) {
-      final list = (prefs.getStringList('rotatedFiles') ?? []).toList();
-      if (rotateView) {
-        if (!list.contains(key)) {
-          list.add(key);
-        }
-      } else {
-        list.remove(key);
-      }
-      await prefs.setStringList('rotatedFiles', list);
+    if (key.isEmpty) {
+      return;
     }
+    final list = (prefs.getStringList(prefsKey) ?? []).toList();
+    if (enabled) {
+      if (!list.contains(key)) {
+        list.add(key);
+      }
+    } else {
+      list.remove(key);
+    }
+    await prefs.setStringList(prefsKey, list);
   }
 
   /// Zoom de botones centrado en el viewport.

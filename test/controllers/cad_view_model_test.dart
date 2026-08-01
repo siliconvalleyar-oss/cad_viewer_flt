@@ -108,4 +108,70 @@ void main() {
       expect(prefs.getStringList('rotatedFiles'), isNot(contains('/tmp/plano.dxf')));
     });
   });
+
+  group('espejo de vista (flipXView/flipYView)', () {
+    test('toggleFlipXView mantiene el punto del mundo en el centro del viewport',
+        () async {
+      SharedPreferences.setMockInitialValues({});
+      final vm = CadViewModel();
+      await Future<void>.delayed(Duration.zero);
+      vm.scale = 2;
+      vm.offsetX = 100;
+      vm.offsetY = 50;
+
+      final wx0 = vm.transform.screenToWorldX(200);
+      final wy0 = vm.transform.screenToWorldY(150);
+
+      await vm.toggleFlipXView(400, 300);
+      expect(vm.flipXView, isTrue);
+      expect(vm.transform.flipX, isTrue);
+      // El punto que estaba en el centro (200,150) sigue en el centro.
+      expect(vm.transform.worldToScreenX(wx0), closeTo(200, 1e-6));
+      expect(vm.transform.worldToScreenY(wy0), closeTo(150, 1e-6));
+
+      // Segundo toggle: vuelve a la orientación original.
+      await vm.toggleFlipXView(400, 300);
+      expect(vm.flipXView, isFalse);
+      expect(vm.transform.worldToScreenX(wx0), closeTo(200, 1e-6));
+      expect(vm.transform.worldToScreenY(wy0), closeTo(150, 1e-6));
+    });
+
+    test('toggleFlipYView mantiene el centro y no altera flipXView', () async {
+      SharedPreferences.setMockInitialValues({});
+      final vm = CadViewModel();
+      await Future<void>.delayed(Duration.zero);
+      vm.scale = 3;
+      vm.offsetX = 90;
+      vm.offsetY = 40;
+
+      final wx0 = vm.transform.screenToWorldX(200);
+      final wy0 = vm.transform.screenToWorldY(150);
+
+      await vm.toggleFlipYView(400, 300);
+      expect(vm.flipYView, isTrue);
+      expect(vm.flipXView, isFalse);
+      expect(vm.transform.worldToScreenX(wx0), closeTo(200, 1e-6));
+      expect(vm.transform.worldToScreenY(wy0), closeTo(150, 1e-6));
+    });
+
+    test('se persisten por archivo y se restauran al cargar', () async {
+      SharedPreferences.setMockInitialValues({});
+      final vm = CadViewModel();
+      await Future<void>.delayed(Duration.zero);
+      vm.currentPath = '/tmp/espejo.dxf';
+      await vm.toggleFlipXView(400, 300);
+      await vm.toggleFlipYView(400, 300);
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getStringList('flippedXFiles'), contains('/tmp/espejo.dxf'));
+      expect(prefs.getStringList('flippedYFiles'), contains('/tmp/espejo.dxf'));
+
+      // Desactivar para este archivo los quita de las listas.
+      await vm.toggleFlipXView(400, 300);
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      expect(prefs.getStringList('flippedXFiles'), isNot(contains('/tmp/espejo.dxf')));
+      expect(prefs.getStringList('flippedYFiles'), contains('/tmp/espejo.dxf'));
+    });
+  });
 }

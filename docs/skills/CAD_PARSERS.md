@@ -69,9 +69,11 @@ class DxfParserWrapper {
 
 ```dart
 class DxfWriter {
-  static String write(CadFile file, {DxfVersion version = DxfVersion.r2000});
-  static Future<void> writeToFile(CadFile file, String path, {DxfVersion version});
+  const DxfWriter();
+  WriteResult write(CadFile file, {DxfWriteVersion version = DxfWriteVersion.r2000});
 }
+// WriteResult { String? content, String? error, List<String> warnings }
+// enum DxfWriteVersion { r2000, r12 }
 ```
 
 | Aspecto | Detalle |
@@ -101,16 +103,20 @@ class DxfWriter {
 
 ```dart
 class DwgParser {
-  static Future<CadFile> parseFile(String dwgPath, {String? odacPath});
-  static Future<String> convertDwgToDxf(String dwgPath, {String? odacPath});
+  const DwgParser();
+  DwgInfo detect(String header);   // magic bytes AC10xx → info con guía de conversión
 }
 ```
 
-### Pipeline DWG
+### MVP v1.0
+
+Detección por magic bytes (`AC10xx`) + mensaje/guía de conversión a DXF (el ViewModel lo muestra como `error` informativo). La conversión local con **ODA File Converter** queda para v0.3+.
+
+### Pipeline DWG (futuro, ODA)
 
 ```
 DWG file → ODA File Converter (CLI: ODAFileConverter in out AC1015 1 1 1 "*.dwg")
-    → DXF temporal → DxfParserWrapper.parseFile(dxfPath) → CadFile
+    → DXF temporal → DxfParserWrapper.parse(dxfPath) → CadFile
     → borrar temporal
 ```
 
@@ -121,9 +127,9 @@ DWG file → ODA File Converter (CLI: ODAFileConverter in out AC1015 1 1 1 "*.dw
 **Archivo:** `lib/utils/file_helper.dart`
 
 ```dart
-FileFormat detectFormat(String path, {Uint8List? bytes});
-bool isDxf(String path);  bool isDwg(String path);  bool isDgn(String path);
-Future<String> readFileAsString(String path);   // try-catch + feedback
+FileFormat detectFormat(String fileName, Uint8List bytes);
+bool isDxf(String fileName);  bool isDwg(String fileName);  bool isDgn(String fileName);
+Future<Uint8List?> readFileSafe(File file);   // try-catch + feedback (null si falla)
 ```
 
 | Señal | Formato |

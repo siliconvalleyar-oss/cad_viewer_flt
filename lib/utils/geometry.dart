@@ -254,20 +254,20 @@ double distanceToEntity(CadEntity e, double px, double py) {
       }
       return best;
     case final CadLwPolyline p:
+      // BUG-10 (reporte QA): solo envolver el último→primero cuando la
+      // polilínea está CERRADA; en abierta el cierre fantasma hacía que
+      // tocar cerca del inicio seleccionara la polilínea erróneamente.
       var best = double.infinity;
       for (var i = 0; i < p.points.length; i++) {
         final v = p.points[i];
+        if (!p.closed && i == p.points.length - 1) {
+          break;
+        }
         final next = p.points[(i + 1) % p.points.length];
         best = math.min(
           best,
           distancePointToSegment(px, py, v.x, v.y, next.x, next.y),
         );
-        if (p.closed && i == p.points.length - 1) {
-          best = math.min(
-            best,
-            distancePointToSegment(px, py, v.x, v.y, p.points[0].x, p.points[0].y),
-          );
-        }
       }
       return best;
     case final CadPolyline p:

@@ -1,3 +1,4 @@
+import 'package:cad_viewer/models/cad_enums.dart';
 import 'package:cad_viewer/models/cad_entity.dart';
 import 'package:cad_viewer/parsers/dxf_parser.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -534,6 +535,338 @@ EOF
       // El espacio modelo vacío se llena con las entidades del bloque.
       expect(result.cadFile!.entities, hasLength(1));
       expect(result.cadFile!.entities.single, isA<CadLine>());
+    });
+  });
+
+  group('bloques anónimos (*D…, *X3) se conservan (BUG-07)', () {
+    test('solo se excluyen *Model_Space y *Paper_Space', () {
+      const dxf = '''
+0
+SECTION
+2
+BLOCKS
+0
+BLOCK
+5
+A
+2
+*X3
+70
+0
+10
+0.0
+20
+0.0
+30
+0.0
+0
+LINE
+5
+B
+8
+0
+10
+0.0
+20
+0.0
+11
+5.0
+21
+5.0
+0
+ENDBLK
+0
+BLOCK
+5
+C
+2
+*Model_Space
+70
+0
+10
+0.0
+20
+0.0
+30
+0.0
+0
+ENDBLK
+0
+BLOCK
+5
+D
+2
+*Paper_Space
+70
+0
+10
+0.0
+20
+0.0
+30
+0.0
+0
+ENDBLK
+0
+ENDSEC
+0
+EOF
+''';
+      final result = parser.parse(dxf, fileName: 'anon.dxf');
+      expect(result.error, isNull);
+      final file = result.cadFile!;
+      // *X3 (bloque dinámico referenciado por INSERT) se conserva con su
+      // geometría; los espacios de modelo/papel NO son bloques de dibujo.
+      final x3 = file.blockByName('*X3');
+      expect(x3, isNotNull);
+      expect(x3!.entities, hasLength(1));
+      expect(file.blockByName('*Model_Space'), isNull);
+      expect(file.blockByName('*Paper_Space'), isNull);
+    });
+
+    test('el INSERT a un bloque anónimo encuentra el bloque', () {
+      const dxf = '''
+0
+SECTION
+2
+BLOCKS
+0
+BLOCK
+5
+A
+2
+*X3
+70
+0
+10
+0.0
+20
+0.0
+30
+0.0
+0
+LINE
+5
+B
+8
+0
+10
+0.0
+20
+0.0
+11
+5.0
+21
+5.0
+0
+ENDBLK
+0
+ENDSEC
+0
+SECTION
+2
+ENTITIES
+0
+INSERT
+5
+E
+8
+0
+2
+*X3
+10
+100
+20
+200
+0
+ENDSEC
+0
+EOF
+''';
+      final result = parser.parse(dxf, fileName: 'anon2.dxf');
+      expect(result.error, isNull);
+      final file = result.cadFile!;
+      final insert = file.entities.whereType<CadInsert>().single;
+      expect(insert.blockName, '*X3');
+      expect(file.blockByName(insert.blockName), isNotNull);
+    });
+  });
+
+  group('DIMENSION: estilo fallback y código raw (BUG-12/BUG-20)', () {
+    test('estilo inexistente cae al primer DIMSTYLE; raw 70 se conserva', () {
+      const dxf = '''
+0
+SECTION
+2
+TABLES
+0
+DIMSTYLE
+2
+Standard
+70
+0
+140
+2.5
+41
+2.5
+0
+ENDTAB
+0
+ENDSEC
+0
+SECTION
+2
+ENTITIES
+0
+DIMENSION
+5
+D1
+8
+0
+3
+TOTO-COTAS
+70
+32
+10
+0.0
+20
+0.0
+11
+5.0
+21
+0.0
+13
+0.0
+23
+0.0
+14
+10.0
+24
+0.0
+42
+10.0
+0
+ENDSEC
+0
+EOF
+''';
+      final result = parser.parse(dxf, fileName: 'dim.dxf');
+      expect(result.error, isNull);
+      final d = result.cadFile!.entities.single as CadDim;
+      expect(d.style, 'TOTO-COTAS');
+      // BUG-12: texto/flecha del primer DIMSTYLE en vez de 0.
+      expect(d.textHeight, closeTo(2.5, 1e-9));
+      expect(d.arrowSize, closeTo(2.5, 1e-9));
+      // BUG-20: el código raw 32 (alineada + bit 0x20) se conserva.
+      // El enum base queda rotated (32 & 0x07 = 0) pero el raw 32 se
+      // preserva para que el writer no degrade el archivo.
+      expect(d.dimTypeRawCode, 32);
+      expect(d.dimType, DimType.rotated);
+    });
+
+    test('estilo existente se usa directo', () {
+      const dxf = '''
+0
+SECTION
+2
+TABLES
+0
+DIMSTYLE
+2
+TOTO-COTAS
+70
+0
+140
+1.5
+41
+1.0
+0
+ENDTAB
+0
+ENDSEC
+0
+SECTION
+2
+ENTITIES
+0
+DIMENSION
+5
+D1
+8
+0
+3
+TOTO-COTAS
+70
+0
+10
+0.0
+20
+0.0
+11
+5.0
+21
+0.0
+13
+0.0
+23
+0.0
+14
+10.0
+24
+0.0
+0
+ENDSEC
+0
+EOF
+''';
+      final result = parser.parse(dxf, fileName: 'dim2.dxf');
+      expect(result.error, isNull);
+      final d = result.cadFile!.entities.single as CadDim;
+      expect(d.textHeight, closeTo(1.5, 1e-9));
+      expect(d.arrowSize, closeTo(1.0, 1e-9));
+    });
+
+    test('sin DIMSTYLE y sin 140/41: textHeight 0 (automático al pintar)', () {
+      const dxf = '''
+0
+SECTION
+2
+ENTITIES
+0
+DIMENSION
+5
+D1
+8
+0
+70
+0
+10
+0.0
+20
+0.0
+11
+5.0
+21
+0.0
+13
+0.0
+23
+0.0
+14
+10.0
+24
+0.0
+0
+ENDSEC
+0
+EOF
+''';
+      final result = parser.parse(dxf, fileName: 'dim3.dxf');
+      expect(result.error, isNull);
+      final d = result.cadFile!.entities.single as CadDim;
+      expect(d.textHeight, 0);
+      expect(d.arrowSize, 0);
+      expect(d.dimTypeRawCode, 0);
     });
   });
 

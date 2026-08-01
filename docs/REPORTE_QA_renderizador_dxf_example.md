@@ -48,7 +48,7 @@
 - [ ] BUG-21 — Writer conserva precisión, `370` y `62` BYLAYER (Anexo B)
 - [ ] BUG-22 — Writer emite header y tablas completas (Anexo B)
 - [ ] BUG-23 — Altura de fuente de cota coherente (Anexo C)
-- [ ] BUG-24 — Cotas casi-horizontales no se dibujan inclinadas (Anexo D)
+- [ ] BUG-24 — Cotas horizontales/verticales no se dibujan inclinadas: usar el eje del grupo 50 (Anexo D)
 - [ ] BUG-25 — Barra superior sin texto vertical "Sin guardar" (Anexo E)
 
 ---
@@ -716,56 +716,70 @@ inclinación** (~5–10°, apenas perceptible) pero **suficiente para que el val
 medido sea incorrecto**. Parece ocurrir "cuando hay otra cota muy cerca", como
 si dos cotas no pudieran estar en el mismo lugar y una se desplazara.
 
-### 11.2 Investigación: la app no desplaza ni colisiona cotas
+### 11.2 Investigación: la app no desplaza cotas; el eje sale de 13→14
 
 - **No existe lógica de colisión / desplazamiento entre cotas** en la app
   (búsqueda de `collid / overlap / nudge / spread / separate` en `lib/` sin
   resultados; no hay herramienta de creación de cotas, solo se leen del DXF).
-- La dirección de la línea de cota sale **100 % de los defpoints del archivo**:
+- La dirección de la línea de cota sale **solo de los defpoints del archivo**:
   `dxf_parser.dart:486` lee `x3/y3 = grupo 13/23` y `x4/y4 = grupo 14/24`, y
   `cad_painter.dart:740-743` calcula la dirección unitaria `(14−13)/len`. Si el
-  archivo trae `13` e `14` con Y ligeramente distinta, la cota se dibuja
+  archivo trae `13` e `14` con Y (o X) ligeramente distinta, la cota se dibuja
   inclinada.
-- La inclinación **está en el archivo fuente** y no la introduce el guardado:
-  en `original.dxf` vs `modificado_por_aplicacion.dxf` los ángulos y defpoints
-  son **idénticos**.
 
-### 11.3 Datos verificados (example.dxf / original.dxf, 532 cotas)
+### 11.3 La raíz real: la app ignora el grupo 50 (BUG-24)
+
+- **304/532 cotas traen el grupo 50 (ángulo de rotación de la cota)** y en todas
+  es **eje puro**: `0°`/`180°` (horizontal) y `90°`/`270°` (vertical). **Ninguna
+  cota del archivo está declarada diagonal.**
+- De esas 304, en **110 la dirección real `13→14` NO coincide con el grupo 50**
+  (>1°): el archivo declara la cota horizontal/vertical, pero los defpoints
+  `13/14` están levemente desalineados (ruido de dibujo), y la app —que ignora el
+  grupo 50— dibuja la recta `13→14` **en diagonal**. Ejemplo real: cota vertical
+  entre `(1492.988, 1822.760)` y `(1498.528, 1821.666)`: la app la dibuja a
+  `11.17°` y mide `5.647` en vez de la vertical `4.600` (proyección sobre el eje).
+- **Conclusión: no es un error del archivo sino de la app**, que debe usar el eje
+  del grupo 50 (y la proyección de `14−13` sobre él) en vez de unir `13→14`
+  directamente. El guardado no introduce la inclinación (`original.dxf` vs
+  `modificado_por_aplicacion.dxf` idénticos).
+
+### 11.4 Datos verificados (example.dxf / original.dxf, 532 cotas)
 
 | Inclinación de la cota (13→14) | Cantidad |
 |---|---|
 | 0–1° (horizontales) | 189 |
 | 1–5° | 27 |
 | **5–15° (las "~10°" reportadas)** | **13** |
-| 15–85° (inclinadas reales: rampas/escaleras) | 78 |
+| 15–85° | 78 |
 | 85–89° | 48 |
 | 89–90° (verticales) | 177 |
 
-Las 13 cotas de 5–15° son **cortas** (0.10–6.3 u) con una diferencia de Y de
-0.02–1.09 u en su base: el mismo error de dibujo en una base corta produce un
+Las cotas desalineadas son **cortas** (0.10–6.3 u) con una diferencia de
+0.02–1.09 u en su base: el mismo ruido de dibujo en una base corta produce un
 ángulo visible. Por eso se percibe "cuando hay otra cota muy cerca": en las
-zonas densas las cotas son cortas y las pequeñas desalineaciones del original
-se vuelven evidentes.
+zonas densas las cotas son cortas y la desalineación se vuelve evidente.
 
-### 11.4 Por qué el valor mide mal (BUG-24)
+### 11.5 Por qué el valor mide mal (BUG-24)
 
 El painter muestra `formatLength(d.measurement ?? len)`
 (`cad_painter.dart:776-779`):
 
 - Solo **19/532** cotas traen grupo 42 (medición real) y **65/532** grupo 1
   (texto); el resto (la mayoría) cae a `len = distance(13,14)`, que es la
-  longitud **inclinada**, no la proyección sobre el eje horizontal.
-- Con ~10° de inclinación, `len` supera a la luz horizontal en ~1.5 % —
-  suficiente para que la medida difiera del valor real del plano.
+  longitud **en diagonal**, no la proyección sobre el eje de la cota.
+- Ejemplo: cota que debería medir vertical entre `(1,3)` y `(2,7)` → la app
+  muestra `√(1²+4²) = 4.12` en vez de `4.0`. Con ~10° de inclinación el error es
+  de ~1.5 %, suficiente para que la medida difiera del valor real del plano.
 
-### 11.5 Correcciones sugeridas (BUG-24)
+### 11.6 Correcciones sugeridas (BUG-24)
 
-- **Painter**: enderezar a eje cuando la inclinación es menor a un umbral
-  (p. ej. 2–3°): usar la luz del eje dominante (horizontal/vertical) tanto para
-  la línea de cota como para el valor.
-- **Medición**: cuando no haya grupo 42, calcular la proyección de `(14−13)`
-  sobre el eje de la cota (grupo 50 si existe) en vez de la distancia directa.
-- Reusar el grupo 42 siempre que esté presente (ya se hace).
+- **Parser**: leer el **grupo 50** (ángulo de rotación) en `dxf_parser.dart:486`
+  y guardarlo en `CadDim` (304/532 cotas lo tienen).
+- **Painter**: usar el eje del grupo 50 para la línea de cota
+  (`cad_painter.dart:740-743`); si no existe, enderezar al eje dominante cuando
+  la inclinación sea menor a un umbral (p. ej. 2–3°).
+- **Medición**: calcular la **proyección** de `(14−13)` sobre el eje de la cota
+  en vez de la distancia directa; reusar el grupo 42 cuando exista (ya se hace).
 
 ---
 

@@ -1050,6 +1050,7 @@ class CadDim extends CadEntity {
     super.lineType,
     super.lineWeight,
     required this.dimType,
+    this.dimTypeRawCode,
     required this.x1,
     required this.y1,
     required this.x2,
@@ -1066,6 +1067,11 @@ class CadDim extends CadEntity {
   });
 
   final DimType dimType;
+
+  /// Código DXF raw del grupo 70 (p. ej. 32 = alineada + texto horizontal).
+  /// BUG-20: se conserva para que el writer no pierda los bits altos
+  /// (0x20) al volver a escribir el archivo.
+  final int? dimTypeRawCode;
   final double x1;
   final double y1;
   final double x2;
@@ -1099,6 +1105,7 @@ class CadDim extends CadEntity {
     Object? lineType = unset,
     Object? lineWeight = unset,
     DimType? dimType,
+    Object? dimTypeRawCode = unset,
     double? x1,
     double? y1,
     double? x2,
@@ -1121,6 +1128,9 @@ class CadDim extends CadEntity {
         lineWeight:
             identical(lineWeight, unset) ? this.lineWeight : lineWeight as double?,
         dimType: dimType ?? this.dimType,
+        dimTypeRawCode: identical(dimTypeRawCode, unset)
+            ? this.dimTypeRawCode
+            : dimTypeRawCode as int?,
         x1: x1 ?? this.x1,
         y1: y1 ?? this.y1,
         x2: x2 ?? this.x2,
@@ -1147,6 +1157,7 @@ class CadDim extends CadEntity {
       other.lineType == lineType &&
       other.lineWeight == lineWeight &&
       other.dimType == dimType &&
+      other.dimTypeRawCode == dimTypeRawCode &&
       other.x1 == x1 &&
       other.y1 == y1 &&
       other.x2 == x2 &&
@@ -1169,6 +1180,7 @@ class CadDim extends CadEntity {
         lineType,
         lineWeight,
         dimType,
+        dimTypeRawCode,
         x1,
         y1,
         x2,

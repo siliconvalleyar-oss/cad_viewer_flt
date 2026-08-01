@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.4.11] - 2026-08-01 — Reporte QA: halo sutil, LOD de cotas, bloques anónimos, writer fiel
+### Fixed
+- **BUG-01 (doc §E) — Halo de selección dibujaba la caja envolvente gigante**: al tocar una entidad se pintaba un rectángulo redondeado celeste que abarcaba todo el AABB (un muro o polilínea de manzana cubría todo el dibujo). Ahora `_paintSelectionHalo` **repinta solo el trazo de la entidad** con el color de selección (sin bbox); solo los grips conservan un anillo sutil
+- **BUG-03 (doc §C2) — Cotas sin LOD (siempre visibles, "masa de cotas")**: el texto de cota se forzaba a un mínimo de 12 px, por lo que las 532 cotas del plano se dibujaban todas simultáneamente. Ahora el tamaño proyectado decide: por debajo de ~8 px la cota completa se **oculta** (LOD por zoom), y el mínimo de legibilidad pasó a 8 px (`clampDimTextHeight` con `minPx: 8`)
+- **BUG-04 (doc §C1) — Umbral LOD de texto de 2 px a 8 px**: los textos de alto ~0.3 u se renderizaban desde 2 px (ruido ilegible a zoom medio); ahora desde 8 px
+- **BUG-07 — Bloques anónimos/dinámicos (`*D…`, `*X3`) descartados**: el filtro `!b.name.startsWith('*')` eliminaba los bloques anónimos válidos que los INSERT referencian (p. ej. los 4 INSERT a `*X3` en example.dxf quedaban como cruz placeholder). Ahora solo se excluyen `*Model_Space` y `*Paper_Space` (espacios, no bloques de dibujo)
+- **BUG-09 (latente) — `entityBoundsInFile` de INSERT no restaba el base point del bloque**: el fit-to-screen y el culling podían no coincidir con la geometría dibujada cuando un bloque tiene base ≠ (0,0). Ahora resta `block.basePoint`, igual que el painter
+- **BUG-10 — Hit-test de LWPOLYLINE abierta con cierre fantasma**: el último segmento se medía también contra el primer vértice (`% length` sin chequear `closed`), seleccionando polilíneas abiertas erróneamente al tocar entre final e inicio. Ahora solo se envuelve cuando `closed`
+- **BUG-11 (doc F) — Bulge del segmento de cierre en LWPOLYLINE cerrada**: el cierre último→primero se dibujaba recto ignorando el bulge. Ahora se muestrea con `pointOnBulge` cuando el último vértice tiene bulge
+- **BUG-14 — Ejes cartesianos que atravesaban todo el viewport**: con `$EXTMIN=(0,0)` el origen está en la esquina y las líneas roja/azul cruzaban todo el dibujo. Ahora los ejes se **acotan a ~25% del viewport** alrededor del origen (menor prioridad visual)
+- **BUG-12 — Estilo de cota inexistente (TOTO-COTAS) se perdía**: `dimStyles['TOTO-COTAS']` → `null` → texto/flecha en 0. Ahora cae al **primer DIMSTYLE definido** en la tabla (o a 0 solo si no hay ninguno, y el painter deriva proporcional)
+- **BUG-20 (CRÍTICO, writer) — Cotas corruptas al guardar**: el writer escribía `70=0` (perdiendo el bit 0x20 de tipo 32), no escribía el estilo (code 3) y hardcodeaba `*D1`. Ahora `CadDim.dimTypeRawCode` conserva el grupo 70 raw del archivo (parser lo propaga, writer lo escribe), y el writer emite el estilo (code 3) y la medición
+- **BUG-21 (writer) — Precisión, lineweight y color BYLAYER perdidos**: `_formatDouble` redondeaba a 6 decimales (ahora 8), no escribía `370` (lineweight, en centésimas de mm) ni `62=256` (BYLAYER explícito)
+### Added
+- `CadDim.dimTypeRawCode` (int?, grupo 70 raw) con copyWith/==/hashCode; el parser lo propaga (`byCode.containsKey(70)`)
+- Tests: `test/parsers/dxf_parser_test.dart` (bloques anónimos se conservan salvo Model/Paper Space, INSERT a *X3 resuelve, DIMSTYLE fallback + raw 70), `test/parsers/dxf_writer_test.dart` (nuevo: estilo code 3 + tipo raw 32, 62=256, 370 en centésimas, precisión 8 decimales), `test/models/cad_file_test.dart` (INSERT con base point ≠ 0), `test/utils/geometry_test.dart` (cierre fantasma en abierta/cerrada)
+
 ## [0.4.10] - 2026-08-01 — Fix bloques con 0 entidades (INSERT sin contenido: banera.dxf)
 ### Fixed
 - **"Solo se ve la cota, faltan los vectores de diseño"** en `files_cad/banera.dxf`: el parser **creaba los bloques vacíos** — en `_buildFile` las entidades internas se acumulaban en `currentBlock` vía `copyWith`, pero esa copia **nunca se escribía de vuelta en la lista `blocks`**, así que **todos los bloques quedaban con 0 entidades** (afectaba también a example.dxf). El `INSERT` del bloque `bañera` (10 LINE, 20 ARC, 2 CIRCLE) existía pero su bloque estaba vacío → el painter dibujaba solo el placeholder y el diseño nunca se instanciaba; únicamente la DIMENSION (que renderiza con sus propias coordenadas) era visible. Ahora `ENDBLK` guarda el `currentBlock` acumulado en la lista

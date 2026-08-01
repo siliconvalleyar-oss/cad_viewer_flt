@@ -252,7 +252,12 @@ class DxfParserWrapper {
       layers: layers.isEmpty ? const [CadLayer(name: '0')] : layers,
       lineTypes: lineTypes,
       entities: entities,
-      blocks: blocks.where((b) => !b.name.startsWith('*')).toList(),
+      // BUG-07 (reporte QA): conservar bloques anónimos/dinámicos (*D…,
+      // *X3, *U…), que los INSERT pueden referenciar; solo se excluyen los
+      // espacios de papel/modelo (no son bloques de dibujo).
+      blocks: blocks
+          .where((b) => b.name != '*Model_Space' && b.name != '*Paper_Space')
+          .toList(),
     );
   }
 
@@ -488,13 +493,19 @@ class DxfParserWrapper {
         return _parseSpline(byCode, handle, layer, effColor, lineType, lineWeight);
       case 'DIMENSION':
         final styleName = first(3, '');
-        final style = dimStyles[styleName];
+        var style = dimStyles[styleName];
+        // BUG-12 (reporte QA): estilo referenciado inexistente (p. ej.
+        // TOTO-COTAS) → usar el primer DIMSTYLE definido en vez de null.
+        if (style == null && dimStyles.isNotEmpty) {
+          style = dimStyles.values.first;
+        }
         final entityTextH = d(140);
         final entityArrow = d(41);
         return CadDim(
           handle: handle, layer: layer, color: effColor,
           lineType: lineType, lineWeight: lineWeight,
           dimType: DimType.fromDxfCode(ix(70)),
+          dimTypeRawCode: byCode.containsKey(70) ? ix(70) : null,
           x1: d(10), y1: d(20), x2: d(11), y2: d(21),
           x3: d(13), y3: d(23), x4: d(14), y4: d(24),
           text: lastOrNull(1), style: styleName.isEmpty ? null : styleName,

@@ -1,7 +1,60 @@
+import 'package:cad_viewer/models/cad_entity.dart';
 import 'package:cad_viewer/utils/geometry.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  group('distanceToEntity LWPOLYLINE (BUG-10: cierre fantasma)', () {
+    test('abierta: el último segmento no envuelve al primer vértice', () {
+      // Polilínea abierta (0,0)→(10,0)→(10,10). Sin cierre: la distancia al
+      // segmento último→primero NO debe medirse (cierre fantasma).
+      const poly = CadLwPolyline(
+        handle: 'p',
+        layer: '0',
+        points: [
+          LwVertex(0, 0),
+          LwVertex(10, 0),
+          LwVertex(10, 10),
+        ],
+        closed: false,
+      );
+      // Punto en el medio de donde estaría el cierre fantasma (5,5):
+      // debe estar lejos (a > 1 u) de cualquier segmento real.
+      final d = distanceToEntity(poly, 5, 5);
+      expect(d, greaterThan(1));
+      expect(d, closeTo(5, 1e-6)); // dista 5 del segmento (10,0)→(10,10).
+    });
+
+    test('cerrada: el cierre último→primero sí se mide', () {
+      const poly = CadLwPolyline(
+        handle: 'p',
+        layer: '0',
+        points: [
+          LwVertex(0, 0),
+          LwVertex(10, 0),
+          LwVertex(10, 10),
+        ],
+        closed: true,
+      );
+      final d = distanceToEntity(poly, 5, 5);
+      expect(d, closeTo(0, 1e-6));
+    });
+
+    test('abierta: punto sobre el último segmento real sí se selecciona', () {
+      const poly = CadLwPolyline(
+        handle: 'p',
+        layer: '0',
+        points: [
+          LwVertex(0, 0),
+          LwVertex(10, 0),
+          LwVertex(10, 10),
+        ],
+        closed: false,
+      );
+      expect(distanceToEntity(poly, 10, 5), closeTo(0, 1e-6));
+      expect(distanceToEntity(poly, 5, 0), closeTo(0, 1e-6));
+    });
+  });
+
   group('pointOnBulge', () {
     test('t=0 y t=1 son los extremos del segmento', () {
       final p0 = pointOnBulge(0, 0, 10, 0, 0.5, 0);

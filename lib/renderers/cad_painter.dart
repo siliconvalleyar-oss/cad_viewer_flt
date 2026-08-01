@@ -7,7 +7,6 @@
 library;
 
 import 'dart:math' as math;
-import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 
@@ -219,11 +218,14 @@ class CadPainter extends CustomPainter {
   // Entidades.
   // -------------------------------------------------------------------------
 
-  void _paintEntity(Canvas canvas, CadEntity e, Color color) {
+  void _paintEntity(Canvas canvas, CadEntity e, Color color, {bool highlight = false}) {
+    // BUG-01 (doc §E): con `highlight` se resalta SOLO la geometría
+    // (color de selección + trazo mayor), sin bounding boxes gigantes.
+    final paintColor = highlight ? selectionColor : color;
     final stroke = Paint()
-      ..color = color
+      ..color = paintColor
       ..style = PaintingStyle.stroke
-      ..strokeWidth = math.max(1, e.lineWeight ?? 1)
+      ..strokeWidth = math.max(highlight ? 3.0 : 1.0, e.lineWeight ?? 1)
       ..strokeCap = StrokeCap.round
       ..strokeJoin = StrokeJoin.round;
     final dash = _dashPixelsFor(e);
@@ -291,21 +293,21 @@ class CadPainter extends CustomPainter {
         }
         _strokePath(canvas, path, stroke, dash);
       case final CadText t:
-        _paintText(canvas, t.text, t.x, t.y, t.height, t.rotation, color, t.horizontalAlign);
+        _paintText(canvas, t.text, t.x, t.y, t.height, t.rotation, paintColor, t.horizontalAlign);
       case final CadMText m:
-        _paintText(canvas, m.text, m.x, m.y, m.height, m.rotation, color, 0);
+        _paintText(canvas, m.text, m.x, m.y, m.height, m.rotation, paintColor, 0);
       case final CadInsert i:
-        _paintInsert(canvas, i, stroke, depth: 0);
+        _paintInsert(canvas, i, stroke, highlight: highlight, depth: 0);
       case final CadPoint pt:
         final sx = transform.worldToScreenX(pt.x);
         final sy = transform.worldToScreenY(pt.y);
-        canvas.drawCircle(Offset(sx, sy), 2.5, Paint()..color = color);
+        canvas.drawCircle(Offset(sx, sy), 2.5, Paint()..color = paintColor);
       case final CadHatch h:
-        _paintHatch(canvas, h, color);
+        _paintHatch(canvas, h, paintColor);
       case final CadSpline s:
         _paintSpline(canvas, s, stroke, dash);
       case final CadDim d:
-        _paintDimension(canvas, d, stroke, color);
+        _paintDimension(canvas, d, stroke, paintColor);
       case final Cad3dFace f:
         if (f.corners.length < 2) {
           break;
@@ -327,7 +329,7 @@ class CadPainter extends CustomPainter {
           break; // Degenerado (todos los puntos coinciden).
         }
         final fill = Paint()
-          ..color = color.withValues(alpha: 0.45)
+          ..color = paintColor.withValues(alpha: 0.45)
           ..style = PaintingStyle.fill;
         final solidPath = Path()
           ..moveTo(
@@ -342,7 +344,7 @@ class CadPainter extends CustomPainter {
         canvas.drawPath(
           solidPath,
           Paint()
-            ..color = color
+            ..color = paintColor
             ..style = PaintingStyle.stroke
             ..strokeWidth = 1,
         );
@@ -407,7 +409,19 @@ class CadPainter extends CustomPainter {
     }
     if (p.closed) {
       final firstPt = pts.first;
-      path.lineTo(transform.worldToScreenX(firstPt.x), transform.worldToScreenY(firstPt.y));
+      final lastPt = pts.last;
+      // BUG-11 (doc F): muestrear el segmento de cierre último→primero con
+      // su bulge (antes se cerraba recto ignorando el arco).
+      if (hasBulge && lastPt.bulge != 0) {
+        for (var t = 1; t <= 12; t++) {
+          final pt = pointOnBulge(
+            lastPt.x, lastPt.y, firstPt.x, firstPt.y, lastPt.bulge, t / 12,
+          );
+          path.lineTo(transform.worldToScreenX(pt.x), transform.worldToScreenY(pt.y));
+        }
+      } else {
+        path.lineTo(transform.worldToScreenX(firstPt.x), transform.worldToScreenY(firstPt.y));
+      }
     }
     _strokePath(canvas, path, stroke, dash);
   }
@@ -427,8 +441,8 @@ class CadPainter extends CustomPainter {
       return;
     }
     final size = height * transform.scale;
-    if (size < 2) {
-      return; // LOD: texto ilegible a zoom lejano.
+    if (size < 8) {
+      return; // BUG-04 (doc §C1): texto ilegible (<8 px) no se dibuja.
     }
     final painter = TextPainter(
       text: TextSpan(
@@ -471,7 +485,8 @@ class CadPainter extends CustomPainter {
   /// Resuelve y pinta un INSERT: aplica la transformación del bloque
   /// (traslación + escala + rotación) a cada entidad interna y la pinta.
   /// Profundidad limitada para bloques anidados o auto-referenciados.
-  void _paintInsert(Canvas canvas, CadInsert i, Paint stroke, {int depth = 0}) {
+  void _paintInsert(Canvas canvas, CadInsert i, Paint stroke,
+      {bool highlight = false, int depth = 0}) {
     if (depth > 12) {
       return;
     }
@@ -493,9 +508,9 @@ class CadPainter extends CustomPainter {
     for (final e in block.entities) {
       final world = transformBlockEntity(e, tx, ty, i);
       if (world is CadInsert) {
-        _paintInsert(canvas, world, stroke, depth: depth + 1);
+        _paintInsert(canvas, world, stroke, highlight: highlight, depth: depth + 1);
       } else {
-        _paintEntity(canvas, world, entityColorResolver(world));
+        _paintEntity(canvas, world, entityColorResolver(world), highlight: highlight);
       }
     }
   }
@@ -638,10 +653,19 @@ class CadPainter extends CustomPainter {
     // clampDimTextHeight: mínimo legible (~12 px al alejar) y máximo 10%
     // de la medida (evita que un DIMSTYLE en otras unidades genere líneas
     // de extensión descomunales fuera de rango).
+    // BUG-03 (doc §C2): LOD de cotas. El tamaño proyectado decide: por
+    // debajo del umbral (~8 px) la cota se OCULTA (en vez de forzar un
+    // mínimo de 12 px que hacía visibles siempre las 532 cotas del plano).
+    final textPx =
+        (d.textHeight > 0 ? d.textHeight : len * 0.04) * dimTextScale * transform.scale;
+    if (textPx < 8) {
+      return; // LOD: cota ilegible a vista general.
+    }
     final textH = clampDimTextHeight(
       (d.textHeight > 0 ? d.textHeight : len * 0.04) * dimTextScale,
       len,
       transform.scale,
+      minPx: 8,
     );
     final arrow = clampDimArrowSize(
       (d.arrowSize > 0 ? d.arrowSize : textH * 1.5) * dimArrowScale,
@@ -784,22 +808,13 @@ class CadPainter extends CustomPainter {
     if (selectedHandles.isEmpty) {
       return;
     }
-    final paint = Paint()
-      ..color = selectionColor.withValues(alpha: 0.9)
-      ..strokeWidth = 2.5
-      ..style = PaintingStyle.stroke;
+    // BUG-01 (doc §E): resaltar SOLO la geometría de la entidad (color de
+    // selección + trazo mayor), sin bounding boxes ni rectángulos gigantes.
     for (final e in entities) {
       if (!selectedHandles.contains(e.handle)) {
         continue;
       }
-      // Halo: bounding box redondeado.
-      final b = _entityScreenBounds(e);
-      if (b != null) {
-        canvas.drawRRect(
-          RRect.fromRectAndRadius(b.inflate(6), const Radius.circular(4)),
-          paint,
-        );
-      }
+      _paintEntity(canvas, e, selectionColor, highlight: true);
     }
   }
 
@@ -926,26 +941,6 @@ class CadPainter extends CustomPainter {
         }
         return b;
     }
-  }
-
-  ui.Rect? _entityScreenBounds(CadEntity e) {
-    final b = _entityWorldBounds(e);
-    if (b.isEmpty) {
-      return null;
-    }
-    // Con la Y invertida y/o rotación, el orden de las esquinas en pantalla
-    // se invierte: ordenamos X e Y para que el rect nunca tenga dimensiones
-    // negativas.
-    final sx0 = transform.worldToScreenX(b.minX);
-    final sx1 = transform.worldToScreenX(b.maxX);
-    final sy0 = transform.worldToScreenY(b.minY);
-    final sy1 = transform.worldToScreenY(b.maxY);
-    return Rect.fromLTRB(
-      sx0 < sx1 ? sx0 : sx1,
-      sy0 < sy1 ? sy0 : sy1,
-      sx0 < sx1 ? sx1 : sx0,
-      sy0 < sy1 ? sy1 : sy0,
-    );
   }
 
   @override

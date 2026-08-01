@@ -240,11 +240,14 @@ Bounds entityBoundsInFile(CadEntity entity, CadFile file, {int depth = 0}) {
           final cos = math.cos(i.rotation);
           final sin = math.sin(i.rotation);
           final local = block.getBounds();
-          // Esquina transformada: world = R(rot)·(local·escala) + inserción.
+          final base = block.basePoint;
+          // BUG-09 (reporte QA): restar el base point, igual que el painter,
+          // para que fit-to-screen coincida con la geometría dibujada.
+          // Esquina transformada: world = R(rot)·((local-base)·escala)+inserción.
           double tx(double x, double y) =>
-              i.x + (x * i.scaleX) * cos - (y * i.scaleY) * sin;
+              i.x + ((x - base.x) * i.scaleX) * cos - ((y - base.y) * i.scaleY) * sin;
           double ty(double x, double y) =>
-              i.y + (x * i.scaleX) * sin + (y * i.scaleY) * cos;
+              i.y + ((x - base.x) * i.scaleX) * sin + ((y - base.y) * i.scaleY) * cos;
           final pts = [
             (local.minX, local.minY),
             (local.maxX, local.minY),

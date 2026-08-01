@@ -43,13 +43,18 @@ class AxisRenderer {
       ..strokeWidth = 1.4
       ..style = ui.PaintingStyle.stroke;
 
-    // Eje X.
-    canvas.drawLine(ui.Offset(0, oy), ui.Offset(viewportW, oy), paintX);
-    _arrow(canvas, ui.Offset(viewportW - 12, oy), math.pi, axisX);
+    // BUG-14 (reporte QA, doc §B): ejes acotados alrededor del origen
+    // (como el icono UCS de AutoCAD) en lugar de cruzar todo el viewport,
+    // para no "atravesar" el dibujo cuando el origen está en una esquina.
+    final len = math.min(viewportW, viewportH) * 0.25;
 
-    // Eje Y.
-    canvas.drawLine(ui.Offset(ox, 0), ui.Offset(ox, viewportH), paintY);
-    _arrow(canvas, ui.Offset(ox, 12), -math.pi / 2, axisY);
+    // Eje X: del origen hacia la derecha y la izquierda (acotado).
+    canvas.drawLine(ui.Offset(ox - len, oy), ui.Offset(ox + len, oy), paintX);
+    _arrow(canvas, ui.Offset(ox + len - 12, oy), math.pi, axisX);
+
+    // Eje Y: del origen hacia arriba y abajo (acotado).
+    canvas.drawLine(ui.Offset(ox, oy - len), ui.Offset(ox, oy + len), paintY);
+    _arrow(canvas, ui.Offset(ox, oy - len + 12), -math.pi / 2, axisY);
   }
 
   void _arrow(ui.Canvas canvas, ui.Offset tip, double angle, ui.Color color) {

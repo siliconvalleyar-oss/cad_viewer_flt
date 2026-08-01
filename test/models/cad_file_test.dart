@@ -94,6 +94,31 @@ void main() {
       expect(b.maxY, 22);
     });
 
+    test('INSERT resuelve bloque con base point ≠ (0,0) (BUG-09)', () {
+      // Bloque con base point (2,2): el círculo en (0,0) radio 2 queda en
+      // coordenadas locales [-2,-2]..[2,2] pero se resta la base → la
+      // geometría real del mundo es [-4,-4]..[0,0] + inserción (10,20).
+      const block = CadBlock(
+        name: 'B',
+        basePoint: CadPoint3(2, 2, 0),
+        entities: [
+          CadCircle(handle: 'b1', layer: '0', cx: 0, cy: 0, radius: 2),
+        ],
+      );
+      final file = fileWith(
+        const [
+          CadInsert(handle: 'i', layer: '0', blockName: 'B', x: 10, y: 20),
+        ],
+        blocks: const [block],
+      );
+      final b = file.getBounds();
+      // Sin restar la base, el bounds daba [8,18]..[12,22] (desplazado).
+      expect(b.minX, 6);
+      expect(b.minY, 16);
+      expect(b.maxX, 10);
+      expect(b.maxY, 20);
+    });
+
     test('INSERT sin bloque: solo el punto de inserción', () {
       final file = fileWith(const [
         CadInsert(handle: 'i', layer: '0', blockName: 'NO_EXISTE', x: 3, y: 4),

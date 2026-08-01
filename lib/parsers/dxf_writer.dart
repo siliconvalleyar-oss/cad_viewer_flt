@@ -441,6 +441,11 @@ class DxfWriter {
         _common(b, e, r12, 'AcDbDimension');
         b.writeln('  2');
         b.writeln('*D1');
+        // BUG-20 (reporte QA): preservar el estilo (code 3) de la cota.
+        if (d.style != null && d.style!.isNotEmpty) {
+          b.writeln('  3');
+          b.writeln(d.style!);
+        }
         _pair(b, 10, d.x1); _pair(b, 20, d.y1); _pair(b, 30, 0);
         _pair(b, 11, d.x2); _pair(b, 21, d.y2); _pair(b, 31, 0);
         _pair(b, 13, d.x3); _pair(b, 23, d.y3); _pair(b, 33, 0);
@@ -448,7 +453,9 @@ class DxfWriter {
           _pair(b, 14, d.x4); _pair(b, 24, d.y4); _pair(b, 34, 0);
         }
         b.writeln(' 70');
-        b.writeln('${d.dimType.dxfCode}');
+        // BUG-20: preservar el código DXF raw (bit 0x20 de texto horizontal
+        // incluido) en lugar de solo el tipo base (`dxfCode => index`).
+        b.writeln('${d.dimTypeRawCode ?? d.dimType.dxfCode}');
         if (d.text != null) {
           b.writeln('  1');
           b.writeln(d.text!);
@@ -579,13 +586,17 @@ class DxfWriter {
     }
     b.writeln('  8');
     b.writeln(e.layer);
-    if (e.color != null) {
-      b.writeln(' 62');
-      b.writeln('${e.color}');
-    }
+    // BUG-21 (reporte QA): escribir 62=256 (BYLAYER) explícito y el grosor
+    // de línea (370, en centésimas de mm) que antes se perdían.
+    b.writeln(' 62');
+    b.writeln('${e.color ?? 256}');
     if (!r12 && e.lineType != null) {
       b.writeln('  6');
       b.writeln(e.lineType!);
+    }
+    if (!r12 && e.lineWeight != null) {
+      b.writeln('370');
+      b.writeln('${(e.lineWeight! * 100).round()}');
     }
     if (!r12) {
       b.writeln('100');
@@ -596,10 +607,9 @@ class DxfWriter {
   void _commonR12(StringBuffer b, CadEntity e) {
     b.writeln('  8');
     b.writeln(e.layer);
-    if (e.color != null) {
-      b.writeln(' 62');
-      b.writeln('${e.color}');
-    }
+    // BUG-21: 62=256 (BYLAYER) explícito también en R12.
+    b.writeln(' 62');
+    b.writeln('${e.color ?? 256}');
   }
 
   void _marker(StringBuffer b, String marker) {
@@ -638,7 +648,7 @@ class DxfWriter {
     if (v == v.roundToDouble() && v.abs() < 1e15) {
       return '${v.round()}';
     }
-    return v.toStringAsFixed(6);
+    return v.toStringAsFixed(8);
   }
 
   double _radToDeg(double rad) => rad * 180 / math.pi;

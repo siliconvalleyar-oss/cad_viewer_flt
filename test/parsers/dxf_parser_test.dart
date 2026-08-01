@@ -366,4 +366,219 @@ EOF
       expect(result.cadFile!.entities, hasLength(1));
     });
   });
+
+  group('BLOCK: las entidades internas se asocian al bloque (fix banera.dxf)', () {
+    test('el bloque se puebla con sus entidades y el INSERT lo resuelve', () {
+      // Estructura real de files_cad/banera.dxf: el diseño (LINE/ARC/CIRCLE)
+      // vive en el bloque "banera" y un INSERT en ENTITIES lo instancia.
+      // Antes, el parser acumulaba entidades con copyWith pero nunca las
+      // escribía de vuelta en la lista `blocks` → todos los bloques quedaban
+      // con 0 entidades y solo se veía la cota.
+      const dxf = '''
+0
+SECTION
+2
+BLOCKS
+0
+BLOCK
+5
+A
+2
+banera
+70
+0
+10
+0.0
+20
+0.0
+30
+0.0
+0
+LINE
+5
+B
+8
+0
+10
+0.0
+20
+0.0
+11
+100.0
+21
+50.0
+0
+ARC
+5
+F
+8
+0
+10
+10.0
+20
+10.0
+40
+5.0
+50
+0.0
+51
+90.0
+0
+ENDBLK
+0
+ENDSEC
+0
+SECTION
+2
+ENTITIES
+0
+DIMENSION
+5
+C
+8
+0
+10
+0.0
+20
+0.0
+0
+INSERT
+5
+E
+8
+0
+2
+banera
+10
+-1100
+20
+300
+41
+1.0
+42
+1.0
+50
+0
+0
+ENDSEC
+0
+EOF
+''';
+      final result = parser.parse(dxf, fileName: 'banera.dxf');
+      expect(result.error, isNull);
+      expect(result.warnings, isEmpty);
+      final file = result.cadFile!;
+      // El bloque existe y AHORA tiene sus entidades internas.
+      final block = file.blockByName('banera');
+      expect(block, isNotNull);
+      expect(block!.entities, hasLength(2));
+      expect(block.entities[0], isA<CadLine>());
+      expect(block.entities[1], isA<CadArc>());
+      // Entidades: DIMENSION + INSERT.
+      expect(file.entities, hasLength(2));
+      final insert = file.entities.whereType<CadInsert>().single;
+      expect(insert.blockName, 'banera');
+      expect(insert.x, closeTo(-1100, 1e-9));
+      expect(insert.y, closeTo(300, 1e-9));
+    });
+
+    test('el bloque *Model_Space normaliza sus entidades al modelo', () {
+      const dxf = '''
+0
+SECTION
+2
+BLOCKS
+0
+BLOCK
+5
+A
+2
+*Model_Space
+70
+0
+10
+0.0
+20
+0.0
+30
+0.0
+0
+LINE
+5
+B
+8
+0
+10
+0.0
+20
+0.0
+11
+50.0
+21
+25.0
+0
+ENDBLK
+0
+ENDSEC
+0
+SECTION
+2
+ENTITIES
+0
+ENDSEC
+0
+EOF
+''';
+      final result = parser.parse(dxf, fileName: 'model.dxf');
+      expect(result.error, isNull);
+      // El espacio modelo vacío se llena con las entidades del bloque.
+      expect(result.cadFile!.entities, hasLength(1));
+      expect(result.cadFile!.entities.single, isA<CadLine>());
+    });
+  });
+
+  group('entidades en sección OBJECTS (robustez, no aplica a banera.dxf)', () {
+    test('se rescatan tipos conocidos sin generar warnings espurios', () {
+      // dxfrw 0.6.3 a veces deja entidades sueltas en OBJECTS; se rescatan
+      // solo los tipos conocidos. DICTIONARY no es entidad → sin warning.
+      const dxf = '''
+0
+SECTION
+2
+OBJECTS
+0
+DICTIONARY
+5
+D
+0
+INSERT
+5
+E
+8
+0
+2
+banera
+10
+-1100
+20
+300
+41
+1.0
+42
+1.0
+50
+0
+0
+ENDSEC
+0
+EOF
+''';
+      final result = parser.parse(dxf, fileName: 'obj.dxf');
+      expect(result.error, isNull);
+      expect(result.warnings, isEmpty);
+      final insert = result.cadFile!.entities.whereType<CadInsert>().single;
+      expect(insert.blockName, 'banera');
+      expect(insert.x, closeTo(-1100, 1e-9));
+    });
+  });
 }

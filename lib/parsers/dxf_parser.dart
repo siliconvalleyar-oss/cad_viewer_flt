@@ -180,11 +180,24 @@ class DxfParserWrapper {
           continue;
         }
         if (pair.value == 'ENDBLK') {
+          // Guarda el bloque acumulado (con sus entidades) en la lista.
+          // Sin esto, `currentBlock` se acumulaba con copyWith pero nunca
+          // se escribía de vuelta a `blocks`: todos los bloques quedaban
+          // con 0 entidades y los INSERT solo dibujaban el placeholder.
+          if (currentBlock != null && blocks.isNotEmpty) {
+            blocks[blocks.length - 1] = currentBlock;
+          }
           currentBlock = null;
           i += 1;
           continue;
         }
-        if (section == 'ENTITIES' || currentBlock != null) {
+        // Algunos escritores (p. ej. dxfrw 0.6.3 de LibreCAD) colocan
+        // entidades sueltas (INSERT, LINE…) en la sección OBJECTS; se
+        // rescatan solo los tipos conocidos para no generar warnings
+        // espurios por DICTIONARY/LAYOUT/XRECORD y demás objetos.
+        final inObjectsEntity =
+            section == 'OBJECTS' && _knownEntityTypes.contains(pair.value);
+        if (section == 'ENTITIES' || currentBlock != null || inObjectsEntity) {
           if (pair.value == 'POLYLINE') {
             final poly = _parseHeavyPolylineFull(pairs, i);
             if (poly != null) {
@@ -698,6 +711,14 @@ class DxfParserWrapper {
       controlPoints: cps, knots: knots,
     );
   }
+
+  /// Tipos de entidad reconocidos por [_parseEntity] (más POLYLINE). Se usa
+  /// para rescatar entidades ubicadas fuera de ENTITIES (p. ej. OBJECTS).
+  static const _knownEntityTypes = <String>{
+    'LINE', 'CIRCLE', 'ARC', 'ELLIPSE', 'LWPOLYLINE', 'POLYLINE',
+    'TEXT', 'MTEXT', 'INSERT', 'POINT', 'HATCH', 'SPLINE',
+    'DIMENSION', '3DFACE', 'SOLID', 'TRACE',
+  };
 
   double _degToRad(double deg) => deg * math.pi / 180;
 

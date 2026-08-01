@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.4.10] - 2026-08-01 — Fix bloques con 0 entidades (INSERT sin contenido: banera.dxf)
+### Fixed
+- **"Solo se ve la cota, faltan los vectores de diseño"** en `files_cad/banera.dxf`: el parser **creaba los bloques vacíos** — en `_buildFile` las entidades internas se acumulaban en `currentBlock` vía `copyWith`, pero esa copia **nunca se escribía de vuelta en la lista `blocks`**, así que **todos los bloques quedaban con 0 entidades** (afectaba también a example.dxf). El `INSERT` del bloque `bañera` (10 LINE, 20 ARC, 2 CIRCLE) existía pero su bloque estaba vacío → el painter dibujaba solo el placeholder y el diseño nunca se instanciaba; únicamente la DIMENSION (que renderiza con sus propias coordenadas) era visible. Ahora `ENDBLK` guarda el `currentBlock` acumulado en la lista
+### Added
+- Test: `test/parsers/dxf_parser_test.dart` — el bloque se puebla con sus entidades internas y el INSERT lo resuelve (caso banera.dxf), y `*Model_Space` normaliza sus entidades al modelo
+### Changed
+- Robustez: las entidades de tipo conocido (LINE, INSERT, SOLID…) ubicadas en la sección `OBJECTS` (escritores como dxfrw 0.6.3) se rescatan al espacio modelo sin warnings espurios por DICTIONARY/LAYOUT/XRECORD
+
 ## [0.4.9] - 2026-08-01 — Fix bloques con espejo (escala negativa): arcos y bulges invertidos
 ### Fixed
 - **"Sobresalen cosas por fuera del vector diagonal"**: en `files_cad/example.dxf` los bloques de puertas (ARC de giro) y sanitarios (LWPOLYLINE con bulge) se insertan con **escala negativa** (`esc=(-1,1)`, `esc=(-1.15,1.15)`, etc.) y rotación (252.6°, 287.4°…). `_transformBlockEntity` no manejaba el **espejo**: un espejo invierte la orientación, por lo que los ángulos de ARC/ELLIPSE/TEXT deben **reflejarse** (θ → rot−θ o π+rot−θ) y los extremos del arco **intercambiarse**, y el **bulge de LWPOLYLINE debe negarse**. Sin esto, los arcos de giro de puertas y las curvas de griferías se dibujaban por el lado equivocado, "sobresaliendo" del vector

@@ -81,6 +81,7 @@ class CadDocument {
       version: cadFile.version,
       header: cadFile.header,
       layers: cleanLayers,
+      lineTypes: cadFile.lineTypes,
       entities: entities,
       blocks: blocks,
     );

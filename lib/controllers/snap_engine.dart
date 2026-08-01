@@ -351,7 +351,7 @@ class SnapEngine {
         for (final c in f.corners) {
           candidates.add(SnapResult(point: c, mode: SnapMode.endpoint, entity: e));
         }
-      case final CadHatch h:
+      case CadHatch():
         break;
     }
   }

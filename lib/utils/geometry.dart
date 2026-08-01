@@ -133,35 +133,39 @@ CadPoint3 pointOnEllipse(
   final x = majorRadius * cosP * cosR - minorRadius * sinP * sinR;
   final y = majorRadius * cosP * sinR + minorRadius * sinP * cosR;
   return CadPoint3(cx + x, cy + y);
-}
-
-/// Punto en t∈[0,1] del segmento con bulge (tan(θ/4) del arco).
-///
-/// `t=0` → inicio, `t=1` → fin. Aplica la fórmula de la polilínea con arco.
-CadPoint3 pointOnBulge(
-  double x1,
-  double y1,
-  double x2,
-  double y2,
-  double bulge,
-  double t,
-) {
-  final x = x1 + (x2 - x1) * t;
-  final y = y1 + (y2 - y1) * t;
-  if (bulge.abs() < epsilon) {
-    return CadPoint3(x, y);
+}  /// Punto en t∈[0,1] del segmento con bulge (tan(θ/4) del arco).
+  ///
+  /// `t=0` → inicio, `t=1` → fin. Calcula el centro del arco con
+  /// [bulgeCenter] y barre el ángulo incluido θ = 4·atan(bulge).
+  /// (Corregido: antes dividía por ~0 y generaba puntos a ~1e9, dibujando
+  /// líneas gigantes fuera del dibujo.)
+  CadPoint3 pointOnBulge(
+    double x1,
+    double y1,
+    double x2,
+    double y2,
+    double bulge,
+    double t,
+  ) {
+    if (bulge.abs() < epsilon) {
+      return CadPoint3(x1 + (x2 - x1) * t, y1 + (y2 - y1) * t);
+    }
+    final center = bulgeCenter(x1, y1, x2, y2, bulge);
+    if (center == null) {
+      return CadPoint3(x1 + (x2 - x1) * t, y1 + (y2 - y1) * t);
+    }
+    final r = distance(center.x, center.y, x1, y1);
+    if (r < epsilon) {
+      return CadPoint3(x1 + (x2 - x1) * t, y1 + (y2 - y1) * t);
+    }
+    final start = math.atan2(y1 - center.y, x1 - center.x);
+    final sweep = 4 * math.atan(bulge); // firmado: CCW con bulge > 0
+    final ang = start + sweep * t;
+    return CadPoint3(
+      center.x + r * math.cos(ang),
+      center.y + r * math.sin(ang),
+    );
   }
-  final theta = 4 * math.atan(bulge);
-  final sagitta = (bulge.abs() - 0).abs() <= 0
-      ? 0.0
-      : (math.pow(bulge.abs() * 2, 2) + 1) * 0.5;
-  // Desplazamiento perpendicular según la flecha del arco.
-  final d = distance(x1, y1, x2, y2) * 0.5 * sagitta * 0; // sagitta simplificada
-  final perpX = -(y2 - y1) / (d + epsilon);
-  final perpY = (x2 - x1) / (d + epsilon);
-  final arrow = distance(x1, y1, x2, y2) * 0.5 * math.tan(theta / 4);
-  return CadPoint3(x + perpX * arrow, y + perpY * arrow);
-}
 
 /// Centro del arco definido por un segmento con bulge (para grips/snap).
 CadPoint3? bulgeCenter(double x1, double y1, double x2, double y2, double b) {
@@ -315,3 +319,39 @@ double distanceToEntity(CadEntity e, double px, double py) {
 /// `true` si el punto está dentro del rectángulo (window selection).
 bool pointInRect(double px, double py, Bounds rect) =>
     rect.contains(px, py);
+
+/// Altura de texto de cota proporcional a la medida, con clamps.
+///
+/// [rawH] viene del DIMSTYLE (dimtxt) o de una altura derivada; [scale] es
+/// px por unidad de mundo. Devuelve una altura en unidades de mundo tal que
+/// el texto nunca quede por debajo de [minPx] px en pantalla (legibilidad)
+/// ni por encima del 10% de la longitud medida (evita cotas descomunales
+/// cuando el archivo trae dimtxt en otras unidades y generaba líneas de
+/// extensión fuera de rango).
+double clampDimTextHeight(
+  double rawH,
+  double length,
+  double scale, {
+  double minPx = 12,
+}) {
+  final minH = minPx / scale;
+  final maxH = math.max(length * 0.10, minH);
+  return rawH.clamp(minH, maxH).toDouble();
+}
+
+/// Tamaño de flecha de cota proporcional, nunca desproporcionado.
+///
+/// Devuelve un tamaño en unidades de mundo con mínimo legible ([minPx] px)
+/// y máximo 30% de la longitud medida (evita flechas gigantes de archivos
+/// con dimasz en otras unidades).
+double clampDimArrowSize(
+  double raw,
+  double length,
+  double scale,
+  double textH, {
+  double minPx = 4,
+}) {
+  final minA = math.max(minPx / scale, textH * 0.25);
+  final maxA = math.max(length * 0.30, minA);
+  return raw.clamp(minA, maxA).toDouble();
+}

@@ -4,6 +4,8 @@
 /// convención); la sesión editable vive en `CadDocument` (cad_document.dart).
 library;
 
+import 'dart:math' as math;
+
 import 'package:collection/collection.dart';
 
 import 'bounds.dart';
@@ -65,7 +67,8 @@ class CadHeader {
   int get hashCode => Object.hash(units, extMin, extMax, baseAngle, insUnits);
 }
 
-/// Contenido de un archivo CAD: cabecera, capas, bloques y entidades.
+/// Contenido de un archivo CAD: cabecera, capas, tipos de línea, bloques y
+/// entidades.
 class CadFile {
   const CadFile({
     required this.fileName,
@@ -73,6 +76,7 @@ class CadFile {
     this.version = 'AC1015',
     this.header = const CadHeader(),
     this.layers = const [],
+    this.lineTypes = const {},
     this.entities = const [],
     this.blocks = const [],
   });
@@ -91,6 +95,11 @@ class CadFile {
 
   /// Definiciones de capas.
   final List<CadLayer> layers;
+
+  /// Tipos de línea definidos en la tabla LTYPE: nombre → patrón en
+  /// unidades de dibujo (positivo = trazo, negativo = espacio, 0 = punto).
+  /// "Continuous" no suele estar (es el default sólido).
+  final Map<String, List<double>> lineTypes;
 
   /// Entidades del dibujo (model space).
   final List<CadEntity> entities;
@@ -126,7 +135,7 @@ class CadFile {
   Bounds getBounds() {
     var bounds = const Bounds.empty();
     for (final entity in entities) {
-      bounds = bounds.expandToInclude(_entityBounds(entity, this));
+      bounds = bounds.expandToInclude(entityBoundsInFile(entity, this));
     }
     return bounds;
   }
@@ -137,6 +146,7 @@ class CadFile {
     String? version,
     CadHeader? header,
     List<CadLayer>? layers,
+    Map<String, List<double>>? lineTypes,
     List<CadEntity>? entities,
     List<CadBlock>? blocks,
   }) =>
@@ -146,6 +156,7 @@ class CadFile {
         version: version ?? this.version,
         header: header ?? this.header,
         layers: layers ?? this.layers,
+        lineTypes: lineTypes ?? this.lineTypes,
         entities: entities ?? this.entities,
         blocks: blocks ?? this.blocks,
       );
@@ -158,6 +169,8 @@ class CadFile {
       other.version == version &&
       other.header == header &&
       const ListEquality<CadLayer>().equals(other.layers, layers) &&
+      const MapEquality<String, List<double>>(values: ListEquality<double>())
+          .equals(other.lineTypes, lineTypes) &&
       const ListEquality<CadEntity>().equals(other.entities, entities) &&
       const ListEquality<CadBlock>().equals(other.blocks, blocks);
 
@@ -168,17 +181,22 @@ class CadFile {
         version,
         header,
         const ListEquality<CadLayer>().hash(layers),
+        const MapEquality<String, List<double>>(values: ListEquality<double>())
+            .hash(lineTypes),
         const ListEquality<CadEntity>().hash(entities),
         const ListEquality<CadBlock>().hash(blocks),
       );
 
   @override
   String toString() =>
-      'CadFile($fileName, v$version, ${entities.length} entidades, ${layers.length} capas)';
+      'CadFile($fileName, v$version, ${entities.length} entidades, ${layers.length} capas, ${lineTypes.length} lineTypes)';
 }
 
 /// Bounds de una entidad; resuelve bloques referenciados por INSERT.
-Bounds _entityBounds(CadEntity entity, CadFile file) {
+///
+/// Público para reutilizarlo en fit-to-screen (CadViewModel) y ventanas de
+/// selección. `depth` evita recursión infinita en bloques auto-referenciados.
+Bounds entityBoundsInFile(CadEntity entity, CadFile file, {int depth = 0}) {
   var bounds = const Bounds.empty();
   switch (entity) {
     case final CadLine l:
@@ -215,19 +233,30 @@ Bounds _entityBounds(CadEntity entity, CadFile file) {
           .expandToIncludePoint(m.x - m.height, m.y - m.height)
           .expandToIncludePoint(m.x + m.width + m.height, m.y + m.height);
     case final CadInsert i:
-      // Resuelve el bloque referenciado (traslación + escala).
-      final block = file.blockByName(i.blockName);
-      if (block != null && !block.getBounds().isEmpty) {
-        final local = block.getBounds();
-        bounds = bounds
-            .expandToIncludePoint(
-              i.x + local.minX * i.scaleX,
-              i.y + local.minY * i.scaleY,
-            )
-            .expandToIncludePoint(
-              i.x + local.maxX * i.scaleX,
-              i.y + local.maxY * i.scaleY,
-            );
+      if (depth < 12) {
+        // Resuelve el bloque referenciado (traslación + escala + rotación).
+        final block = file.blockByName(i.blockName);
+        if (block != null && !block.getBounds().isEmpty) {
+          final cos = math.cos(i.rotation);
+          final sin = math.sin(i.rotation);
+          final local = block.getBounds();
+          // Esquina transformada: world = R(rot)·(local·escala) + inserción.
+          double tx(double x, double y) =>
+              i.x + (x * i.scaleX) * cos - (y * i.scaleY) * sin;
+          double ty(double x, double y) =>
+              i.y + (x * i.scaleX) * sin + (y * i.scaleY) * cos;
+          final pts = [
+            (local.minX, local.minY),
+            (local.maxX, local.minY),
+            (local.maxX, local.maxY),
+            (local.minX, local.maxY),
+          ];
+          for (final (x, y) in pts) {
+            bounds = bounds.expandToIncludePoint(tx(x, y), ty(x, y));
+          }
+        } else {
+          bounds = bounds.expandToIncludePoint(i.x, i.y);
+        }
       } else {
         bounds = bounds.expandToIncludePoint(i.x, i.y);
       }

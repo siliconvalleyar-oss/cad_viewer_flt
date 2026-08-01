@@ -95,6 +95,7 @@ class DxfParserWrapper {
     final layers = <CadLayer>[];
     final blocks = <CadBlock>[];
     final dimStyles = <String, ({double textHeight, double arrowSize})>{};
+    final lineTypes = <String, List<double>>{};
     var entities = <CadEntity>[];
     CadBlock? currentBlock;
 
@@ -139,6 +140,14 @@ class DxfParserWrapper {
             }
           }
           i += 2;
+          continue;
+        }
+        if (section == 'TABLES' && pair.value == 'LTYPE') {
+          i += 1;
+          final lt = _parseLtype(pairs, i);
+          if (lt != null) {
+            lineTypes[lt.$1] = lt.$2;
+          }
           continue;
         }
         if (section == 'TABLES' && pair.value == 'LAYER') {
@@ -227,9 +236,37 @@ class DxfParserWrapper {
       version: version,
       header: header,
       layers: layers.isEmpty ? const [CadLayer(name: '0')] : layers,
+      lineTypes: lineTypes,
       entities: entities,
       blocks: blocks.where((b) => !b.name.startsWith('*')).toList(),
     );
+  }
+
+  /// Lee un registro LTYPE: nombre (2) y elementos de patrón (49).
+  ///
+  /// En DXF los elementos 49 son positivos = trazo, negativos = espacio y
+  /// 0 = punto. Devuelve `(nombre, patrón)` o `null` si no es válido.
+  (String, List<double>)? _parseLtype(List<DxfPair> pairs, int start) {
+    String? name;
+    final pattern = <double>[];
+    var i = start;
+    while (i < pairs.length && pairs[i].code != 0) {
+      final p = pairs[i];
+      switch (p.code) {
+        case 2:
+          name = p.value;
+        case 49:
+          final v = double.tryParse(p.value);
+          if (v != null) {
+            pattern.add(v);
+          }
+      }
+      i += 1;
+    }
+    if (name == null || pattern.isEmpty) {
+      return null;
+    }
+    return (name, List<double>.unmodifiable(pattern));
   }
 
   /// Lee un registro DIMSTYLE: nombre (2), altura de texto dimtxt (140) y
@@ -349,7 +386,9 @@ class DxfParserWrapper {
     final layer = first(8, '0');
     final color = ix(62, 256);
     final lineType = lastOrNull(6);
-    final lineWeight = double.tryParse(first(370, ''));
+    // El grupo 370 está en centésimas de mm (30 = 0.30 mm); valores ≤ 0
+    // (BYLAYER/BYBLOCK/DEFAULT) se normalizan a null (heredar).
+    final lineWeight = _lineWeightFrom370(double.tryParse(first(370, '')));
 
     if (handle.isEmpty) {
       handle = 'h${start.toRadixString(16)}';
@@ -499,7 +538,7 @@ class DxfParserWrapper {
         case 6:
           lineType = p.value;
         case 370:
-          lineWeight = double.tryParse(p.value);
+          lineWeight = _lineWeightFrom370(double.tryParse(p.value));
         case 70:
           closed = (int.tryParse(p.value) ?? 0) & 1 == 1;
       }
@@ -646,6 +685,14 @@ class DxfParserWrapper {
   }
 
   double _degToRad(double deg) => deg * math.pi / 180;
+
+  /// Convierte el grupo DXF 370 (centésimas de mm) a mm; ≤ 0 → null.
+  double? _lineWeightFrom370(double? raw) {
+    if (raw == null || raw <= 0) {
+      return null;
+    }
+    return raw / 100.0;
+  }
 
   CadPoint3? _readPoint(List<DxfPair> pairs, int start) {
     if (start + 2 >= pairs.length) {

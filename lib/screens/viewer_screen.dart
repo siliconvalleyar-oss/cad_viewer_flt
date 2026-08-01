@@ -308,9 +308,11 @@ class _ViewerScreenState extends State<ViewerScreen> {
 
   Offset _screenToWorld(Offset screen) {
     final vm = context.read<CadViewModel>();
+    // Robusto ante la Y invertida y la rotación de vista 180° (el transform
+    // es la única fuente de verdad para pantalla ↔ mundo).
     return Offset(
-      (screen.dx - vm.offsetX) / vm.scale,
-      (screen.dy - vm.offsetY) / vm.scale,
+      vm.transform.screenToWorldX(screen.dx),
+      vm.transform.screenToWorldY(screen.dy),
     );
   }
 
@@ -586,6 +588,19 @@ class _ViewerScreenState extends State<ViewerScreen> {
               onPressed: () => _info(vm, context),
             ),
             IconButton(
+              icon: Icon(
+                Icons.threesixty,
+                color: vm.rotateView ? palette.selection : null,
+              ),
+              tooltip: 'Girar vista 180° (archivos con UCS rotado)',
+              onPressed: _viewportSize == Size.zero
+                  ? null
+                  : () => vm.toggleRotateView(
+                        _viewportSize.width,
+                        _viewportSize.height,
+                      ),
+            ),
+            IconButton(
               icon: const Icon(Icons.fit_screen),
               tooltip: 'Ajustar a pantalla (F)',
               onPressed: () => _fit(vm),
@@ -661,6 +676,8 @@ class _ViewerScreenState extends State<ViewerScreen> {
       transform: vm.transform,
       entities: vm.visibleEntities,
       layers: vm.layers,
+      blocks: vm.document?.blocks ?? const [],
+      lineTypes: vm.document?.cadFile.lineTypes ?? const {},
       units: vm.units,
       backgroundColor: palette.canvasBackground,
       gridColor: palette.grid,
@@ -693,6 +710,9 @@ class _ViewerScreenState extends State<ViewerScreen> {
       documentVersion: vm.documentVersion,
       selectionVersion: vm.selectionVersion,
       transformVersion: vm.transformVersion,
+      dimTextScale: vm.dimTextScale,
+      dimArrowScale: vm.dimArrowScale,
+      dimFontFamily: vm.dimFontFamily,
     )..toolModeFor = vm.toolMode;
   }
 }

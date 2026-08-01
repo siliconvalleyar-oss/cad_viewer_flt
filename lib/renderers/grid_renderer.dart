@@ -53,10 +53,17 @@ class GridRenderer {
       ..strokeWidth = 1
       ..style = ui.PaintingStyle.stroke;
 
-    final minWx = t.screenToWorldX(0);
-    final maxWx = t.screenToWorldX(viewportW);
-    final minWy = t.screenToWorldY(0);
-    final maxWy = t.screenToWorldY(viewportH);
+    final wx0 = t.screenToWorldX(0);
+    final wx1 = t.screenToWorldX(viewportW);
+    final minWx = wx0 < wx1 ? wx0 : wx1;
+    final maxWx = wx0 < wx1 ? wx1 : wx0;
+    // Con la Y invertida, screenToWorldY(0) es el mundo ARRIBA y
+    // screenToWorldY(viewportH) el mundo ABAJO; con la rotación 180° el
+    // orden de X también se invierte: ordenamos ambos rangos.
+    final wyTop = t.screenToWorldY(0);
+    final wyBottom = t.screenToWorldY(viewportH);
+    final minWy = wyTop < wyBottom ? wyTop : wyBottom;
+    final maxWy = wyTop < wyBottom ? wyBottom : wyTop;
 
     final x0 = (minWx / step).floor() * step;
     final y0 = (minWy / step).floor() * step;

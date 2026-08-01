@@ -37,7 +37,6 @@ class HomeScreen extends StatelessWidget {
     final file = result.files.single;
     final bytes = file.bytes ?? await file.xFile.readAsBytes();
     final name = file.name;
-    final path = file.path;
 
     if (name.toLowerCase().endsWith('.dwg')) {
       // MVP DWG: guía de conversión (ADR-0005).

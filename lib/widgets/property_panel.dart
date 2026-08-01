@@ -11,6 +11,7 @@ import '../models/cad_entity.dart';
 import '../models/cad_enums.dart';
 import '../theme/app_theme.dart';
 import '../theme/app_tokens.dart';
+import '../utils/geometry.dart';
 import '../utils/units.dart';
 
 /// Bottom sheet de propiedades.
@@ -88,7 +89,8 @@ class PropertyPanel extends StatelessWidget {
         _row('Handle', e.handle),
         _row('Color', e.color == null ? 'ByLayer' : 'ACI ${e.color}'),
         if (e.lineType != null) _row('Tipo de línea', e.lineType!),
-        if (e.lineWeight != null) _row('Grosor', '${e.lineWeight} mm'),
+        if (e.lineWeight != null)
+          _row('Grosor', '${e.lineWeight!.toStringAsFixed(2)} mm'),
         const Divider(),
         ..._geometryRows(e, vm),
         if (e is CadText || e is CadMText)
@@ -112,12 +114,11 @@ class PropertyPanel extends StatelessWidget {
 
     switch (e) {
       case final CadLine l:
-        add('Inicio', 0);
         add('X1', l.x1);
         add('Y1', l.y1);
         add('X2', l.x2);
         add('Y2', l.y2);
-        add('Longitud', distanceMm(l, vm.units));
+        add('Longitud', distance(l.x1, l.y1, l.x2, l.y2));
       case final CadCircle c:
         add('Centro X', c.cx);
         add('Centro Y', c.cy);
@@ -162,11 +163,6 @@ class PropertyPanel extends StatelessWidget {
         rows.add(_row('Esquinas', '${f.corners.length}'));
     }
     return rows;
-  }
-
-  double distanceMm(CadLine l, UnitsType units) {
-    final d = (l.x1 - l.x2) * (l.x1 - l.x2) + (l.y1 - l.y2) * (l.y1 - l.y2);
-    return d <= 0 ? 0 : d * 0.5; // placeholder; real en geometry
   }
 
   Widget _row(String label, String value) {

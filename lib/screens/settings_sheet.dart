@@ -99,6 +99,67 @@ class SettingsSheet extends StatelessWidget {
 
               const Divider(),
 
+              // Cotas y texto.
+              Text('Cotas y texto', style: AppType.subtitle),
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Tamaño del texto de cota'),
+                subtitle: Text(
+                  '×${vm.dimTextScale.toStringAsFixed(2)}'
+                  '${vm.dimTextScale == 1.0 ? ' (auto)' : ''}',
+                  style: AppType.label,
+                ),
+              ),
+              Slider(
+                value: vm.dimTextScale.clamp(0.2, 5.0).toDouble(),
+                min: 0.2,
+                max: 5.0,
+                divisions: 24,
+                label: '×${vm.dimTextScale.toStringAsFixed(2)}',
+                onChanged: vm.setDimTextScale,
+              ),
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Tamaño de las flechas'),
+                subtitle: Text(
+                  '×${vm.dimArrowScale.toStringAsFixed(2)}'
+                  '${vm.dimArrowScale == 1.0 ? ' (auto)' : ''}',
+                  style: AppType.label,
+                ),
+              ),
+              Slider(
+                value: vm.dimArrowScale.clamp(0.2, 5.0).toDouble(),
+                min: 0.2,
+                max: 5.0,
+                divisions: 24,
+                label: '×${vm.dimArrowScale.toStringAsFixed(2)}',
+                onChanged: vm.setDimArrowScale,
+              ),
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Fuente de la vista'),
+                subtitle: Text(
+                  _fontLabel(vm.dimFontFamily),
+                  style: AppType.label,
+                ),
+                trailing: DropdownButton<String>(
+                  value: _fontOptions.contains(vm.dimFontFamily)
+                      ? vm.dimFontFamily
+                      : '',
+                  items: [
+                    for (final f in _fontOptions)
+                      DropdownMenuItem(value: f, child: Text(_fontLabel(f))),
+                  ],
+                  onChanged: (v) {
+                    if (v != null) {
+                      vm.setDimFontFamily(v);
+                    }
+                  },
+                ),
+              ),
+
+              const Divider(),
+
               // Snap.
               Text('Snapping', style: AppType.subtitle),
               SwitchListTile(
@@ -228,6 +289,28 @@ class SettingsSheet extends StatelessWidget {
       ),
     );
   }
+
+  /// Fuentes disponibles para el texto del lienzo (vacío = sistema).
+  static const List<String> _fontOptions = [
+    '',
+    'monospace',
+    'serif',
+    'sans-serif',
+    'sans-serif-condensed',
+    'sans-serif-medium',
+    'cursive',
+  ];
+
+  static String _fontLabel(String family) => switch (family) {
+        '' => 'Predeterminada',
+        'monospace' => 'Monoespaciada',
+        'serif' => 'Serif',
+        'sans-serif' => 'Sans-serif',
+        'sans-serif-condensed' => 'Sans-serif condensada',
+        'sans-serif-medium' => 'Sans-serif media',
+        'cursive' => 'Cursiva',
+        _ => family,
+      };
 
   List<Widget> _snapModeTiles(BuildContext context, CadViewModel vm) {
     final s = vm.snapEngine.settings;

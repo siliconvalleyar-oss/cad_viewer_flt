@@ -5,6 +5,8 @@
 /// cuando lo necesita (`Offset`/`Size`).
 library;
 
+import 'dart:math' as math;
+
 /// Caja alineada a ejes definida por sus extremos.
 class Bounds {
   /// Caja con extremos explícitos. Requiere `minX <= maxX` y `minY <= maxY`
@@ -110,4 +112,74 @@ class Bounds {
   @override
   String toString() =>
       isEmpty ? 'Bounds(empty)' : 'Bounds($minX, $minY, $maxX, $maxY)';
+}
+
+/// Unión robusta de cajas: descarta **outliers** para el fit-to-screen.
+///
+/// Problema: un dibujo real puede contener entidades "flotantes" (un punto
+/// con coordenadas enormes, un texto/cota gigante fuera de escala) que, si
+/// se incluyen en el bounds, aplastan el resto del plano (se ve diminuto y
+/// desproporcionado). Esta función calcula la caja central (mediana del
+/// centro y del tamaño de cada entidad) y descarta las entidades cuya
+/// distancia o tamaño excedan un factor de la mediana.
+///
+/// Devuelve [Bounds.empty] si no hay cajas.
+Bounds robustUnion(List<Bounds> boxes) {
+  final valid = boxes.where((b) => !b.isEmpty).toList();
+  if (valid.isEmpty) {
+    return const Bounds.empty();
+  }
+  if (valid.length <= 2) {
+    var u = const Bounds.empty();
+    for (final b in valid) {
+      u = u.expandToInclude(b);
+    }
+    return u;
+  }
+
+  // Centro mediano (x e y por separado).
+  final xs = valid.map((b) => b.centerX).toList()..sort();
+  final ys = valid.map((b) => b.centerY).toList()..sort();
+  final cx = xs[xs.length ~/ 2];
+  final cy = ys[ys.length ~/ 2];
+
+  // Distancia de cada caja al centro mediano.
+  final dists = valid
+      .map((b) => math.sqrt(math.pow(b.centerX - cx, 2) + math.pow(b.centerY - cy, 2)))
+      .toList()
+    ..sort();
+  final medianDist = dists[dists.length ~/ 2];
+
+  // Tamaño mediano (diagonal).
+  final sizes = valid
+      .map((b) => math.sqrt(math.pow(b.width, 2) + math.pow(b.height, 2)))
+      .toList()
+    ..sort();
+  final medianSize = sizes[sizes.length ~/ 2];
+
+  // Distancia: rechaza "flotantes" lejanos (factor generoso de la mediana).
+  // Piso con medianSize*10: si muchas entidades coinciden (medianDist ≈ 0),
+  // no rechazar entidades legítimas ligeramente separadas del núcleo.
+  final distLimit = math.max(math.max(medianDist * 100, medianSize * 10), 1e-9);
+  // Tamaño: solo rechaza entidades ABSURDAMENTE grandes (1000× la mediana),
+  // para no cortar elementos legítimos grandes (p. ej. un marco de plano).
+  final sizeLimit = math.max(medianSize * 1000, 1e-9);
+
+  // Acepta entidades cercanas al núcleo Y de tamaño razonable.
+  var result = const Bounds.empty();
+  for (var i = 0; i < valid.length; i++) {
+    final b = valid[i];
+    final d = math.sqrt(math.pow(b.centerX - cx, 2) + math.pow(b.centerY - cy, 2));
+    final s = math.sqrt(math.pow(b.width, 2) + math.pow(b.height, 2));
+    if (d <= distLimit && s <= sizeLimit) {
+      result = result.expandToInclude(b);
+    }
+  }
+  if (result.isEmpty) {
+    // Todos eran outliers (caso degenerado): usa todo.
+    for (final b in valid) {
+      result = result.expandToInclude(b);
+    }
+  }
+  return result;
 }

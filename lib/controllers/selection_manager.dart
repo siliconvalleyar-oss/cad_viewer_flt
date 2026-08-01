@@ -11,7 +11,6 @@ import 'dart:math' as math;
 import '../models/bounds.dart';
 import '../models/cad_document.dart';
 import '../models/cad_entity.dart';
-import '../models/cad_layer.dart';
 
 /// Gestor de selección (pure Dart, testeable).
 class SelectionManager {

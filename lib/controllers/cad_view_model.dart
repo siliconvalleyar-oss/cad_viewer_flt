@@ -11,10 +11,8 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
-import 'dart:typed_data';
 import 'dart:ui' show Color;
 
-import 'package:collection/collection.dart';
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
@@ -146,11 +144,19 @@ class CadViewModel extends ChangeNotifier {
   double cursorX = 0;
   double cursorY = 0;
 
+  /// `true` = vista rotada 180° en el plano (fix de archivos con UCS
+  /// rotado / extrusión (0,0,-1)). Persistido por archivo.
+  bool rotateView = false;
+
   /// Resultado de snap activo (para el indicador visual).
   SnapResult? activeSnap;
 
-  CoordinateTransform get transform =>
-      CoordinateTransform(scale: scale, offsetX: offsetX, offsetY: offsetY);
+  CoordinateTransform get transform => CoordinateTransform(
+        scale: scale,
+        offsetX: offsetX,
+        offsetY: offsetY,
+        rotate180: rotateView,
+      );
 
   // -------------------------------------------------------------------------
   // Preferencias.
@@ -160,6 +166,16 @@ class CadViewModel extends ChangeNotifier {
   GridType gridType = GridType.lines;
   bool showAxes = true;
   bool showCrosshair = true;
+
+  /// Escala del texto de cota (multiplicador sobre la altura del archivo).
+  /// Default 1.0 = usa dimtxt del DIMSTYLE o la altura proporcional.
+  double dimTextScale = 1.0;
+
+  /// Escala del tamaño de flechas de cota (multiplicador sobre dimasz).
+  double dimArrowScale = 1.0;
+
+  /// Fuente para el texto de la vista (cotas y textos); vacío = sistema.
+  String dimFontFamily = '';
 
   /// Lista de archivos recientes (máx. 10).
   List<RecentFile> recentFiles = const [];
@@ -266,6 +282,10 @@ class CadViewModel extends ChangeNotifier {
     currentPath = path ?? file.fileName;
     units = file.header.units == UnitsType.unitless ? UnitsType.mm : file.header.units;
     warnings = result.warnings;
+    // Restaura la rotación de vista persistida para este archivo (fix de
+    // UCS rotado 180° en algunos DXF).
+    rotateView = false;
+    await _restoreRotateView(currentPath);
     commandStack.clear();
     selection.clear();
     grips = const [];
@@ -280,6 +300,16 @@ class CadViewModel extends ChangeNotifier {
     _addRecent(file.fileName);
     _startAutosave();
     notifyListeners();
+  }
+
+  /// Restaura la rotación de vista 180° persistida para un archivo.
+  Future<void> _restoreRotateView(String? key) async {
+    if (key == null || key.isEmpty) {
+      return;
+    }
+    final prefs = await SharedPreferences.getInstance();
+    final list = prefs.getStringList('rotatedFiles') ?? const [];
+    rotateView = list.contains(key);
   }
 
   /// Parsea en un Isolate (contrato JSON, SERIALIZATION §4).
@@ -405,7 +435,12 @@ class CadViewModel extends ChangeNotifier {
       return;
     }
     final bounds = _documentBounds();
-    final t = CoordinateTransform.fitToScreen(bounds, viewportW, viewportH);
+    final t = CoordinateTransform.fitToScreen(
+      bounds,
+      viewportW,
+      viewportH,
+      rotate180: rotateView,
+    );
     scale = t.scale;
     offsetX = t.offsetX;
     offsetY = t.offsetY;
@@ -413,12 +448,19 @@ class CadViewModel extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Bounds del documento para fit, **robusto a outliers**: descarta
+  /// entidades "flotantes" (coordenadas absurdamente lejanas, textos/cotas
+  /// gigantes) que inflarían la vista y harían el dibujo desproporcionado.
   Bounds _documentBounds() {
     final doc = _document!;
-    var b = const Bounds.empty();
+    final boxes = <Bounds>[];
     for (final e in doc.entities) {
-      b = b.expandToInclude(selectionBoundsFor(e, doc));
+      final b = entityBoundsInFile(e, doc.cadFile);
+      if (!b.isEmpty) {
+        boxes.add(b);
+      }
     }
+    var b = robustUnion(boxes);
     if (b.isEmpty) {
       return const Bounds(minX: -100, minY: -100, maxX: 100, maxY: 100);
     }
@@ -428,17 +470,39 @@ class CadViewModel extends ChangeNotifier {
     return Bounds(minX: b.minX - w, minY: b.minY - h, maxX: b.maxX + w, maxY: b.maxY + h);
   }
 
-  /// Zoom en un punto de pantalla (factor > 1 acerca).
+  /// Zoom en un punto de pantalla (factor > 1 acerca). Mantiene el punto
+  /// del mundo bajo el cursor fijo (robusto ante rotate180).
   void zoomAt(double factor, double screenX, double screenY) {
-    final newScale = (scale * factor).clamp(0.0001, 1000000.0);
-    // Mantiene el punto de mundo bajo el cursor fijo.
-    final wx = (screenX - offsetX) / scale;
-    final wy = (screenY - offsetY) / scale;
-    scale = newScale;
-    offsetX = screenX - wx * newScale;
-    offsetY = screenY - wy * newScale;
+    final t = transform.zoomAt(factor, screenX, screenY);
+    scale = t.scale;
+    offsetX = t.offsetX;
+    offsetY = t.offsetY;
     transformVersion++;
     notifyListeners();
+  }
+
+  /// Alterna la rotación de vista 180° manteniendo el punto del mundo en el
+  /// centro del viewport fijo, y persiste la preferencia por archivo.
+  Future<void> toggleRotateView(double viewportW, double viewportH) async {
+    rotateView = !rotateView;
+    // Rotar 180° el viewport: cada punto pasa a (W - sx, H - sy).
+    offsetX = viewportW - offsetX;
+    offsetY = viewportH - offsetY;
+    transformVersion++;
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    final key = currentPath ?? _document?.cadFile.fileName ?? '';
+    if (key.isNotEmpty) {
+      final list = (prefs.getStringList('rotatedFiles') ?? []).toList();
+      if (rotateView) {
+        if (!list.contains(key)) {
+          list.add(key);
+        }
+      } else {
+        list.remove(key);
+      }
+      await prefs.setStringList('rotatedFiles', list);
+    }
   }
 
   /// Zoom de botones centrado en el viewport.
@@ -458,8 +522,8 @@ class CadViewModel extends ChangeNotifier {
 
   /// Actualiza la posición del cursor (status bar + snap + preview).
   void updateCursor(double screenX, double screenY) {
-    final wx = (screenX - offsetX) / scale;
-    final wy = (screenY - offsetY) / scale;
+    final wx = transform.screenToWorldX(screenX);
+    final wy = transform.screenToWorldY(screenY);
     cursorX = wx;
     cursorY = wy;
     previewPoint = CadPoint3(wx, wy);
@@ -1342,7 +1406,6 @@ class CadViewModel extends ChangeNotifier {
     if (e == null || index >= grips.length) {
       return;
     }
-    final target = CadPoint3(wx, wy);
     CadEntity updated;
     switch (e) {
       case final CadLine l:
@@ -1458,6 +1521,9 @@ class CadViewModel extends ChangeNotifier {
     if (ver != null) {
       saveVersion = ver == 0 ? DxfWriteVersion.r2000 : DxfWriteVersion.r12;
     }
+    dimTextScale = prefs.getDouble('dimTextScale') ?? 1.0;
+    dimArrowScale = prefs.getDouble('dimArrowScale') ?? 1.0;
+    dimFontFamily = prefs.getString('dimFontFamily') ?? '';
     notifyListeners();
   }
 
@@ -1473,6 +1539,9 @@ class CadViewModel extends ChangeNotifier {
       recentFiles.map((r) => _jsonEncode(r.toJson())).toList(),
     );
     await prefs.setInt('saveVersion', saveVersion == DxfWriteVersion.r2000 ? 0 : 1);
+    await prefs.setDouble('dimTextScale', dimTextScale);
+    await prefs.setDouble('dimArrowScale', dimArrowScale);
+    await prefs.setString('dimFontFamily', dimFontFamily);
     await prefs.setStringList(
       'snapModes',
       snapEngine.settings.toJson().map((k, v) => MapEntry('$k', '$v')).entries.map((e) => '${e.key}=${e.value}').toList(),
@@ -1522,6 +1591,27 @@ class CadViewModel extends ChangeNotifier {
   void setSaveVersion(DxfWriteVersion v) {
     saveVersion = v;
     _persist();
+    notifyListeners();
+  }
+
+  void setDimTextScale(double v) {
+    dimTextScale = v.clamp(0.2, 5.0).toDouble();
+    _persist();
+    transformVersion++;
+    notifyListeners();
+  }
+
+  void setDimArrowScale(double v) {
+    dimArrowScale = v.clamp(0.2, 5.0).toDouble();
+    _persist();
+    transformVersion++;
+    notifyListeners();
+  }
+
+  void setDimFontFamily(String f) {
+    dimFontFamily = f;
+    _persist();
+    transformVersion++;
     notifyListeners();
   }
 

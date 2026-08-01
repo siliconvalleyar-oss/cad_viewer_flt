@@ -8,6 +8,7 @@ library;
 import 'dart:ui' as ui;
 
 import '../models/cad_entity.dart';
+import '../utils/coordinate_transform.dart';
 
 /// Pinta los grips de edición en coordenadas de mundo.
 class GripRenderer {
@@ -20,7 +21,7 @@ class GripRenderer {
     ui.Canvas canvas,
     List<CadPoint3> grips,
     int? activeIndex,
-    double scale,
+    CoordinateTransform transform,
     ui.Color gripColor,
     ui.Color activeColor,
   ) {
@@ -35,8 +36,8 @@ class GripRenderer {
 
     for (var i = 0; i < grips.length; i++) {
       final g = grips[i];
-      final sx = g.x * scale;
-      final sy = g.y * scale;
+      final sx = transform.worldToScreenX(g.x);
+      final sy = transform.worldToScreenY(g.y);
       final rect = ui.Rect.fromCenter(
         center: ui.Offset(sx, sy),
         width: halfSize * 2,

@@ -12,10 +12,8 @@ library;
 
 import 'dart:math' as math;
 
-import '../models/cad_block.dart';
 import '../models/cad_entity.dart';
 import '../models/cad_file.dart';
-import '../models/cad_layer.dart';
 
 /// Versión DXF de salida.
 enum DxfWriteVersion {

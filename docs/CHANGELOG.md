@@ -1,5 +1,43 @@
 # Changelog
 
+## [0.4.4] - 2026-08-01 — Fix panel de propiedades, grosor de línea y cotas descomunales
+### Fixed
+- **Longitud de línea incorrecta en el panel de propiedades**: `distanceMm` era un placeholder que devolvía `d²·0.5` en vez de la distancia real → una línea de 6.01 mm mostraba "18.05 mm". Ahora usa `distance()` real de geometry; eliminada la fila basura "Inicio"
+- **Grosor de línea (grupo 370)**: se mostraba el valor crudo del DXF (en centésimas de mm): 30 → "30.0 mm" y el painter dibujaba trazos de 30 px (bandas enormes que "desbordaban" del vector). Ahora `_lineWeightFrom370` normaliza a mm (30 → 0.30 mm, ≤0 → null/heredar) en `_parseEntity` y `_parseHeavyPolylineFull`; el panel muestra "0.30 mm"
+- **Cotas con líneas de extensión descomunales ("cosas que desbordan fuera de rango")**: cuando el DIMSTYLE traía `dimtxt`/`dimasz` en otras unidades, el texto y la separación de la línea de cota quedaban enormes. Nuevos `clampDimTextHeight` (mín 12 px, máx 10% de la medida) y `clampDimArrowSize` (mín 4 px, máx 30%) en geometry.dart, aplicados en `_paintDimension`
+### Added
+- **`lib/utils/line_types.dart`**: patrón estándar de AutoCAD completo (DASHED/HIDDEN/CENTER/DOT/DASHDOT/PHANTOM/BORDER/DIVIDE + variantes escaladas `2`/`X2` + ISO `ACAD_ISO*nW100`) y `resolveLineTypePattern` (tabla LTYPE del archivo → insensible a mayúsculas → estándar), usado por el painter (antes las variantes `DASHED2`/`DIVIDE2` se veían sólidas)
+- Tests: `test/utils/line_types_test.dart` (resolución y variantes escaladas), `test/utils/geometry_test.dart` (clamps de cota), `test/parsers/dxf_parser_test.dart` (370→mm, LTYPE)
+
+## [0.4.3] - 2026-08-01 — Fix líneas punteadas + líneas fantasma (bulges)
+### Fixed
+- **Líneas punteadas que se veían sólidas**: el parser leía el tipo de línea (grupo 6) pero el painter dibujaba todo con trazo continuo. Ahora se renderizan los guiones: se **parsea la tabla LTYPE** (nombre grupo 2, patrón grupo 49, positivo = trazo / negativo = espacio / 0 = punto) → `CadFile.lineTypes`, y `CadPainter` resuelve el tipo efectivo (entidad → capa → `Continuous` = sólido, con fallback de patrones estándar AutoCAD: DASHED/HIDDEN/CENTER/DOT/DASHDOT/PHANTOM/BORDER/DIVIDE) y dibuja discontinuo (`dashPath` con `PathMetrics`, escala con zoom, mínimo visible 1.5 px) en líneas, círculos, arcos, elipses, polilíneas (ligeras y pesadas), splines y 3DFACE
+- **Líneas fantasma fuera del dibujo (bug en bulges)**: `pointOnBulge` (geometry.dart) calculaba `d = distance(...)·0.5·sagitta·0` → `d = 0` y luego `perpX = -(y2-y1)/(d+epsilon)` → vectores de ~1e9 que dibujaban **líneas gigantes fuera del plano** en toda polilínea con arcos. Ahora calcula el centro con `bulgeCenter` y barre el ángulo incluido `4·atan(bulge)` (coherente con el resto de la geometría)
+### Added
+- `test/utils/geometry_test.dart` (pointOnBulge: extremos, sagitta, semicírculo, bulge negativo, sin coordenadas gigantes; bulgeCenter), `test/utils/path_utils_test.dart` (dashPath: patrones, contornos múltiples, guarda anti-bucle) y `test/parsers/dxf_parser_test.dart` (tabla LTYPE: nombre+patrón, acumulación, mapa vacío, 49 no numéricos)
+- `lib/utils/path_utils.dart` — `dashPath()` (PathMetrics/extractPath, patrón alterna trazo/espacio, guarda defensiva contra patrones no positivos)
+### Changed
+- `CadFile.lineTypes` (nuevo campo con copyWith/==/hashCode por valor profundo), `CadDocument.exportCadFile` lo propaga, `viewer_screen` lo pasa al painter, `shouldRepaint` lo compara
+
+## [0.4.2] - 2026-08-01 — Fix volteo vertical + desproporción por outliers y bloques
+### Fixed
+- **Volteo vertical 180°**: `CoordinateTransform.worldToScreenY` no invertía Y (el mundo CAD tiene Y hacia arriba, la pantalla hacia abajo) → los dibujos se veían espejados. Ahora `screenY = -worldY·scale + offsetY` con `fitToScreen`, `zoomAt`, `updateCursor`, `_screenToWorld`, grid, arcos, elipses, textos, flechas de cota y halo de selección coherentes con la Y invertida
+- **Desproporción por entidades "flotantes"**: `_documentBounds` (fit-to-screen) ahora usa `robustUnion` (bounds.dart): calcula el centro y tamaño medianos de las entidades y descarta outliers >100× en distancia / >1000× en tamaño, para que un punto o texto gigante fuera de escala no aplaste el resto del plano
+- **Bloques (INSERT) resueltos en render y bounds**: `CadPainter` ahora pinta el contenido real de los bloques (`_paintInsert`/`_transformBlockEntity`: traslación + escala + rotación, anidados con límite de profundidad 12) en lugar de solo una cruz; `entityBoundsInFile` (público en cad_file) incluye la extensión de los bloques con rotación en fit y culling
+### Added
+- `test/utils/coordinate_transform_test.dart` (flip de Y, fit centrado, zoom bajo cursor) y `test/models/bounds_test.dart` (robustUnion: outliers lejanos y gigantes, archivos pequeños)
+### Changed
+- `lib/renderers/grid_renderer.dart`, `cad_painter.dart` — orden de min/max Y tras el flip (culling, halo y rejilla correctos)
+
+## [0.4.1] - 2026-08-01 — Configuración de cotas y fuente
+### Added
+- **Ajustes de cotas en Configuración** (SettingsSheet → sección "Cotas y texto"): slider de **tamaño del texto de cota** (×0.2–×5.0), slider de **tamaño de flechas** (×0.2–×5.0) y selector de **fuente de la vista** (predeterminada, monoespaciada, serif, sans-serif, condensada, media, cursiva) — persisten en `shared_preferences`
+- **CadViewModel**: preferencias `dimTextScale` / `dimArrowScale` / `dimFontFamily` (restaurar, persistir y setters con clamp [0.2, 5.0] y `transformVersion++` para repintado)
+- **CadPainter**: parámetros `dimTextScale` / `dimArrowScale` / `dimFontFamily` aplicados en `_paintDimension` (texto × escala del usuario) y `_paintText` (fuente de la vista en cotas, TEXT y MTEXT); `shouldRepaint` compara los nuevos campos
+- **Tests**: `test/controllers/cad_view_model_test.dart` (persistencia, defaults, clamp y setter de fuente)
+### Changed
+- `lib/screens/viewer_screen.dart` — pasa las nuevas preferencias al painter
+
 ## [0.4.0] - 2026-08-01 — Código implementado + fix de cotas
 ### Added
 - **Código fuente completo implementado** (lib/): parser DXF propio (R12/R2000, LWPOLYLINE con bulges, POLYLINE pesada VERTEX/SEQEND, TEXT/MTEXT, INSERT, HATCH, SPLINE, DIMENSION, 3DFACE), writer DXF R2000/R12, editor con CommandStack (undo/redo, 100), SnapEngine (endpoint/midpoint/center/intersección/cuadrante/nearest/grid/polar + ortho), SelectionManager, CadViewModel (Provider), renderers (CadPainter, grid/axis/grip/snap/layer), 6 temas, pantallas Home/Viewer/LayerPanel/Settings, file_picker 10.3.10 (compat AGP 9), guardado SAF Android, autoguardado con path_provider, icono minimalista (círculo + rombo) y splash animado

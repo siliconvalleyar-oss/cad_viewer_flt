@@ -870,6 +870,184 @@ EOF
     });
   });
 
+  group('HEADER: variables de código 9 (fix crítico)', () {
+    test(r'lee $ACADVER y $INSUNITS (antes nunca se parseaban)', () {
+      // El bloque de variables del HEADER estaba anidado dentro de
+      // 'if (pair.code == 0)' y como usan código 9 nunca se ejecutaba:
+      // original.dxf (AC1021/$INSUNITS=0) se parseaba como AC1015/mm.
+      const dxf = '''
+0
+SECTION
+2
+HEADER
+9
+\$ACADVER
+1
+AC1021
+9
+\$INSUNITS
+70
+0
+9
+\$LTSCALE
+70
+1
+0
+ENDSEC
+0
+EOF
+''';
+      final result = parser.parse(dxf, fileName: 'hdr.dxf');
+      expect(result.error, isNull);
+      final file = result.cadFile!;
+      expect(file.version, 'AC1021');
+      expect(file.header.insUnits, 0);
+      expect(file.header.units, UnitsType.unitless);
+    });
+
+    test(r'variables no reconocidas (p. ej. $LTSCALE) no rompen el parseo', () {
+      const dxf = '''
+0
+SECTION
+2
+HEADER
+9
+\$LTSCALE
+70
+1
+9
+\$ACADVER
+1
+AC1015
+0
+ENDSEC
+0
+SECTION
+2
+ENTITIES
+0
+LINE
+8
+0
+10
+0.0
+20
+0.0
+11
+5.0
+21
+5.0
+0
+ENDSEC
+0
+EOF
+''';
+      final result = parser.parse(dxf, fileName: 'hdr2.dxf');
+      expect(result.error, isNull);
+      expect(result.cadFile!.version, 'AC1015');
+      expect(result.cadFile!.entities, hasLength(1));
+    });
+  });
+
+  group(r'DIMENSION: $DIMTXT del header como fallback (BUG-23)', () {
+    test(r'sin DIMSTYLE en tabla, usa $DIMTXT del header', () {
+      const dxf = '''
+0
+SECTION
+2
+HEADER
+9
+\$DIMTXT
+40
+1.5
+0
+ENDSEC
+0
+SECTION
+2
+ENTITIES
+0
+DIMENSION
+5
+D1
+8
+0
+3
+TOTO-COTAS
+70
+0
+10
+0.0
+20
+0.0
+11
+5.0
+21
+0.0
+13
+0.0
+23
+0.0
+14
+10.0
+24
+0.0
+0
+ENDSEC
+0
+EOF
+''';
+      final result = parser.parse(dxf, fileName: 'dim4.dxf');
+      expect(result.error, isNull);
+      final d = result.cadFile!.entities.single as CadDim;
+      // BUG-23: sin DIMSTYLE, el dimtxt del header evita el 0.
+      expect(d.textHeight, closeTo(1.5, 1e-9));
+      expect(d.arrowSize, closeTo(1.5, 1e-9));
+    });
+
+    test(r'sin DIMSTYLE y sin $DIMTXT: textHeight 0 (automático al pintar)', () {
+      const dxf = '''
+0
+SECTION
+2
+ENTITIES
+0
+DIMENSION
+5
+D1
+8
+0
+70
+0
+10
+0.0
+20
+0.0
+11
+5.0
+21
+0.0
+13
+0.0
+23
+0.0
+14
+10.0
+24
+0.0
+0
+ENDSEC
+0
+EOF
+''';
+      final result = parser.parse(dxf, fileName: 'dim5.dxf');
+      expect(result.error, isNull);
+      final d = result.cadFile!.entities.single as CadDim;
+      expect(d.textHeight, 0);
+      expect(d.arrowSize, 0);
+    });
+  });
+
   group('entidades en sección OBJECTS (robustez, no aplica a banera.dxf)', () {
     test('se rescatan tipos conocidos sin generar warnings espurios', () {
       // dxfrw 0.6.3 a veces deja entidades sueltas en OBJECTS; se rescatan

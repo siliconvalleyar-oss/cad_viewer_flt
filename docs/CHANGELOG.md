@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.4.12] - 2026-08-01 — BUG-23 (Anexo C): fuentes de cota desproporcionadas al guardar
+### Fixed
+- **BUG CRÍTICO — las variables del HEADER nunca se parseaban**: el bloque que lee `$ACADVER`, `$INSUNITS`, `$EXTMIN/MAX` y `$DIMTXT` estaba anidado dentro de `if (pair.code == 0)`, pero esas variables llegan con **código de grupo 9** → jamás se ejecutaba. `files_cad/original.dxf` (AC1021, `$INSUNITS=0`) se leía como `AC1015` + mm. Ahora el parseo es un bloque propio `section == 'HEADER' && pair.code == 9` (verificado con probe real: `version=AC1021 insUnits=0 unitless`). Es la raíz parcial de BUG-13 (unidades forzadas a mm) y el habilitador del fallback `$DIMTXT`
+- **"Las fuentes de las cotas quedan muy grandes" en el archivo guardado** (Anexo C del reporte QA): la causa raíz era que el archivo de salida **no tenía ninguna fuente de altura de texto de cota** — sin grupo `140` por cota, sin tabla `DIMSTYLE` y sin `$DIMTXT/$DIMSCALE/$DIMASZ` en el header. Al reabrir (en la app o en AutoCAD/LibreCAD), el programa caía al `dimtxt` por defecto (~2.5 u), que para cotas de ~1.5–2.3 u deja **el texto más alto que la propia cota**
+### Added
+- **Writer — tabla `DIMSTYLE`**: `_writeTables` ahora emite la tabla con los estilos únicos referenciados por las DIMENSION (nombre code 2, `dimtxt`=140, `dimasz`=41, DIMEXO/DIMDLI/DIMEXE, DIMTAD=1), recopilados por `_collectDimStyles` (las cotas sin estilo se agrupan en `Standard`)
+- **Writer — header de cota**: `_writeHeader` escribe `$DIMTXT`, `$DIMASZ` y `$DIMSCALE` (code 40) a partir del primer estilo efectivo (`_firstDimStyle`), para que los CAD externos usen el dimtxt real del dibujo
+- **Parser — fallback `$DIMTXT`** (BUG-23c): si no hay tabla `DIMSTYLE`, la altura de texto de las cotas usa el `$DIMTXT` del header en vez de quedar en 0 (que antes forzaba el `len*0.04` + piso de 12 px y agravaba el tamaño en el guardado)
+### Changed
+- `lib/parsers/dxf_writer.dart` — `_writeTables` (tabla DIMSTYLE tras LAYER), `_writeHeader` (variables de cota), nuevos `_var40`/`_firstDimStyle`/`_collectDimStyles`
+- `lib/parsers/dxf_parser.dart` — `headerDimTxt` leído del HEADER y aplicado como último recurso en `DIMENSION`
+### Added
+- Tests: `test/parsers/dxf_writer_test.dart` (tabla DIMSTYLE con dimtxt/dimasz, header `$DIMTXT`/`$DIMASZ`, roundtrip preserva textHeight 2.5), `test/parsers/dxf_parser_test.dart` (grupo nuevo `HEADER: variables de código 9`: lee `$ACADVER`/`$INSUNITS`, variables no reconocidas no rompen; fallback `$DIMTXT` sin DIMSTYLE, sin `$DIMTXT` → 0)
+
 ## [0.4.11] - 2026-08-01 — Reporte QA: halo sutil, LOD de cotas, bloques anónimos, writer fiel
 ### Fixed
 - **BUG-01 (doc §E) — Halo de selección dibujaba la caja envolvente gigante**: al tocar una entidad se pintaba un rectángulo redondeado celeste que abarcaba todo el AABB (un muro o polilínea de manzana cubría todo el dibujo). Ahora `_paintSelectionHalo` **repinta solo el trazo de la entidad** con el color de selección (sin bbox); solo los grips conservan un anillo sutil

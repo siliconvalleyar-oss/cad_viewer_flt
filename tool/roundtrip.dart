@@ -7,6 +7,7 @@ import 'package:cad_viewer/models/cad_file.dart';
 
 void main(List<String> args) {
   final path = args.isNotEmpty ? args[0] : 'files_cad/original.dxf';
+  final ver = args.length > 1 ? args[1] : 'r2000';
   final content = File(path).readAsStringSync();
   final res = const DxfParserWrapper().parse(content, fileName: path);
   if (res.error != null) {
@@ -18,12 +19,16 @@ void main(List<String> args) {
   final out = doc.exportCadFile();
 
   final w = DxfWriter();
-  final wr = w.write(out, version: DxfWriteVersion.r2000);
+  final wr = w.write(out, version: ver == 'r12' ? DxfWriteVersion.r12 : DxfWriteVersion.r2000);
   if (wr.error != null) {
     print('ERROR write: ${wr.error}');
     return;
   }
-  final outPath = '/tmp/opencode/roundtrip.dxf';
+  print('writer warnings (${ver}): ${wr.warnings.length}');
+  for (final ww in wr.warnings.take(5)) {
+    print('  warning: $ww');
+  }
+  final outPath = '/tmp/opencode/roundtrip_$ver.dxf';
   File(outPath).writeAsStringSync(wr.content!);
   print('guardado: $outPath (${wr.content!.length} chars)');
 

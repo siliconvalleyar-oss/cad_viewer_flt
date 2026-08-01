@@ -5,7 +5,9 @@
   cotas); Anexo B — comparativa `files_cad/comparar/original.dxf` vs
   `files_cad/comparar/modificado_por_aplicacion.dxf` (lectura ↔ escritura);
   Anexo C — fuentes de cotas descomunales; Anexo D — cotas dibujadas con
-  inclinación; Anexo E — texto vertical "Sin guardar" en la barra superior
+  inclinación (BUG-24) y flechas descomunales en cotas cortas (BUG-26);
+  Anexo E — texto vertical "Sin guardar" en la barra superior; BUG-27 —
+  coordenadas y barra de mediciones superpuestas en vertical
 - **Documento de referencia:** `docs/CORREGIR_instrucciones-correccion-renderizador-dxf.md`
 - **Código auditado:** `lib/renderers/*.dart`, `lib/parsers/dxf_parser.dart`, `lib/models/*.dart`, `lib/controllers/*.dart`, `lib/utils/*.dart`
 - **Fecha:** 2026-08-01
@@ -50,6 +52,8 @@
 - [ ] BUG-23 — Altura de fuente de cota coherente (Anexo C)
 - [ ] BUG-24 — Cotas horizontales/verticales no se dibujan inclinadas: usar el eje del grupo 50 (Anexo D)
 - [ ] BUG-25 — Barra superior sin texto vertical "Sin guardar" (Anexo E)
+- [ ] BUG-26 — Flechas de cota descomunales en cotas cortas (agravan la percepción de inclinación, Anexo D §11.7)
+- [ ] BUG-27 — En vertical la barra de coordenadas tapa la barra de mediciones (coordenadas en línea inferior fina + botón mostrar/ocultar)
 
 ---
 
@@ -426,6 +430,42 @@ Cada hallazgo: **impacto** (Alta/Media/Baja), **síntoma**, **causa raíz**,
 
 ---
 
+### BUG-27 — (Media) En vertical, la barra de coordenadas tapa la barra de mediciones
+
+- **Síntoma (usuario):** en orientación **vertical (portrait)** la barra de
+  coordenadas (abajo) se **superpone a la barra de mediciones** (la que tiene
+  regla/escuadra y otros botones; el usuario la lee como "Tr" = medir con regla
+  o escuadra). En **horizontal (landscape)** se ve más despejada; en vertical
+  quedan pegadas/apiladas.
+- **Dónde:** `lib/screens/viewer_screen.dart:457-498` (`_buildBody`) — todo el
+  bloque inferior se fija con `Positioned` sobre el `Stack`:
+  - `CadStatusBar` (coordenadas `X: … Y: …`): `bottom: 0` + altura 28
+    (`lib/widgets/status_bar.dart:26`), **sin `SafeArea`** → pegado al borde
+    físico de la pantalla (queda detrás de la barra de gestos del sistema).
+  - `ToolbarEdit` (dibujo + medición con regla `Icons.straighten`, escuadra
+    `Icons.architecture`, área `Icons.square_foot`;
+    `lib/widgets/toolbar_edit.dart:59-91`): `bottom: 52`, 52 px de alto →
+    banda 52–104 px.
+  - `CommandBar` (línea de comandos): `bottom: 52`, `maxWidth: 420`
+    (`lib/widgets/command_bar.dart:217`) → en pantallas estrechas ocupa todo
+    el ancho **en la misma banda 52–92 px** y se monta encima del `ToolbarEdit`
+    centrado.
+- **Consecuencia:** en portrait el área inferior (0–104 px) concentra
+  coordenadas + barra de medición + línea de comandos: se superponen, y los
+  botones de medición (regla/escuadra) quedan parcialmente tapados por la línea
+  de comandos o por la barra de coordenadas.
+- **Recomendación (propuesta del usuario, estilo barra de estado de VS Code):**
+  - Mostrar las coordenadas como una **línea fina en el borde inferior**
+    (altura ~20–24 px, texto pequeño `X: … Y: …`), dentro de `SafeArea`, que no
+    compita con la barra de medición.
+  - Añadir un **botón de mostrar/ocultar** para la barra de coordenadas y otro
+    para la barra de mediciones (que se esconda/despliegue a demanda).
+  - En vertical, **apilar**: coordenadas abajo del todo, barra de medición
+    encima, y ocultar la `CommandBar` colapsada cuando esté en la misma banda
+    que el `ToolbarEdit` (o desplazarla a otra esquina).
+
+---
+
 ## 4. Incompatibilidades archivo ↔ código (resumen)
 
 | Dato del archivo | Valor | Impacto en el código |
@@ -780,6 +820,56 @@ El painter muestra `formatLength(d.measurement ?? len)`
   la inclinación sea menor a un umbral (p. ej. 2–3°).
 - **Medición**: calcular la **proyección** de `(14−13)` sobre el eje de la cota
   en vez de la distancia directa; reusar el grupo 42 cuando exista (ya se hace).
+
+### 11.7 Flechas de cota descomunales en cotas cortas (BUG-26)
+
+**Síntoma adicional del usuario:** las flechas de las cotas se ven **de gran
+tamaño**, y probablemente ese sea el motivo por el cual la muestra se ve
+**girada con un ángulo que no corresponde con la cota legítima del plano**.
+
+**Verificado en `cad_painter.dart` — el tamaño mínimo de flecha gana a todo:**
+
+1. `clampDimTextHeight` (`geometry.dart:377`) fuerza el texto a **≥ 8 px** en
+   pantalla: en unidades de mundo eso es `8/scale`. Con el DIMSTYLE `Standard`
+   (dimtxt = `2.5`) ese mínimo **eleva la altura del texto** de 2.5 u a 8 u a
+   escala ≈ 1.
+2. `clampDimArrowSize` (`geometry.dart:393`) deriva la flecha como
+   `textH * 1.5`, con `minA = max(4/scale, textH*0.25)` y
+   `maxA = max(longitud*0.30, minA)`. **Para cotas cortas el tope del 30% nunca
+   aplica**: si `longitud*0.30 < minA`, `maxA` queda igual a `minA` y la flecha
+   se fuerza a ese mínimo **aunque la cota mida 0.08 u**.
+3. `_paintDimArrow` (`cad_painter.dart:741`) dibuja
+   `s = max(arrow * scale, 4.0 px)`: la flecha **nunca baja de 4 px**, mientras
+   la línea de cota proyecta `longitud * scale` px.
+
+**Resultado medido (532 cotas, longitudes 0.08–31.3 u, mediana 1.58 u):**
+
+| Escala de zoom | Flecha más grande que toda la línea | Flecha > 50 % de la línea |
+|---|---|---|
+| 0.5 (vista general) | **515/532 (97 %)** | 529/532 (99 %) |
+| 1.0 | **454/532 (85 %)** | 515/532 (97 %) |
+| 2.0 | 315/532 (59 %) | 454/532 (85 %) |
+| 4.0 | 171/532 (32 %) | 315/532 (59 %) |
+
+La flecha llega a ser **50–100× la longitud de la línea** en las cotas más
+cortas. Como **508/532 cotas (96 %) miden < 6.3 u** y las desalineadas por el
+BUG-24 son precisamente las cortas (0.10–6.3 u), el resultado visual es un
+**diamante relleno** (dos triángulos de 4 px mínimos que se solapan a lo largo
+de una línea de 1–5 px) orientado según el eje `13→14` inclinado unos grados.
+Por eso "se ve girada": la masa de las flechas domina a la línea, y el ángulo
+perceptible es el del eje desalineado, no el del plano legítimo.
+
+**Correcciones sugeridas (BUG-26):**
+
+- Reducir el mínimo de flecha de **4 px fijos** a un valor **relativo a la
+  longitud** de la cota (p. ej. `minA = min(4/scale, longitud*0.15)`), o
+  **ocultar la flecha** por LOD cuando la línea proyecte < ~6 px (igual que el
+  LOD del texto en `cad_painter.dart:661`).
+- No dejar que el `minPx` del texto (8 px) **infle** `textH` y con ello la
+  flecha (`textH * 1.5`): separar la legibilidad del texto de la geometría de
+  la flecha.
+- Combinado con el BUG-24 (eje del grupo 50 + proyección), las cotas cortas
+  quedarán alineadas con el eje correcto y sus flechas proporcionadas.
 
 ---
 

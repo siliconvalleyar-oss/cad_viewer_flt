@@ -1,6 +1,7 @@
 import 'package:cad_viewer/models/cad_enums.dart';
 import 'package:cad_viewer/models/cad_entity.dart';
 import 'package:cad_viewer/models/cad_file.dart';
+import 'package:cad_viewer/parsers/dxf_parser.dart';
 import 'package:cad_viewer/parsers/dxf_writer.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -44,6 +45,72 @@ void main() {
       final result = writer.write(fileWith(const [dim]));
       expect(result.error, isNull);
       expect(result.content!, contains('\n 70\n1\n'));
+    });
+  });
+
+  group('DIMSTYLE y header de cota (BUG-23: fuentes desproporcionadas)', () {
+    test('escribe la tabla DIMSTYLE con dimtxt/dimasz de las cotas', () {
+      const dim = CadDim(
+        handle: 'D1',
+        layer: '0',
+        dimType: DimType.aligned,
+        style: 'TOTO-COTAS',
+        x1: 0, y1: 0, x2: 5, y2: 0, x3: 0, y3: 0, x4: 10, y4: 0,
+        textHeight: 2.5,
+        arrowSize: 2.5,
+      );
+      final result = writer.write(fileWith(const [dim]));
+      expect(result.error, isNull);
+      final content = result.content!;
+      expect(content, contains('DIMSTYLE'));
+      expect(content, contains('AcDbDimStyleTableRecord'));
+      expect(content, contains('TOTO-COTAS'));
+      // dimtxt (140) y dimasz (41) del estilo. _formatDouble usa 8
+      // decimales para no enteros: 2.5 → '2.50000000'.
+      expect(content, contains('\n140\n2.50000000\n'));
+      expect(content, contains('\n 41\n2.50000000\n'));
+      // DIMSCALE del registro DIMSTYLE es el grupo 40 a secas (no
+      // 9/$DIMSCALE). El registro termina en 77 (DIMTAD) tras el 140.
+      expect(content, contains('\n 40\n1\n'));
+      expect(content, contains('\n 77\n1\n'));
+    });
+
+    test(r'escribe $DIMTXT/$DIMASZ en el header', () {
+      const dim = CadDim(
+        handle: 'D1',
+        layer: '0',
+        dimType: DimType.aligned,
+        x1: 0, y1: 0, x2: 5, y2: 0, x3: 0, y3: 0, x4: 10, y4: 0,
+        textHeight: 1.5,
+        arrowSize: 1.0,
+      );
+      final result = writer.write(fileWith(const [dim]));
+      expect(result.error, isNull);
+      final content = result.content!;
+      expect(content, contains(r'$DIMTXT'));
+      expect(content, contains('\n 40\n1.50000000\n'));
+      expect(content, contains(r'$DIMASZ'));
+      expect(content, contains('\n 40\n1\n'));
+    });
+
+    test('roundtrip: el texto de cota conserva su altura', () {
+      const dim = CadDim(
+        handle: 'D1',
+        layer: '0',
+        dimType: DimType.aligned,
+        dimTypeRawCode: 32,
+        style: 'TOTO-COTAS',
+        x1: 0, y1: 0, x2: 5, y2: 0, x3: 0, y3: 0, x4: 10, y4: 0,
+        textHeight: 2.5,
+        arrowSize: 2.5,
+      );
+      final result = writer.write(fileWith(const [dim]));
+      expect(result.error, isNull);
+      final rt = DxfParserWrapper().parse(result.content!);
+      expect(rt.error, isNull);
+      final rtDim = rt.cadFile!.entities.single as CadDim;
+      expect(rtDim.textHeight, closeTo(2.5, 1e-9));
+      expect(rtDim.arrowSize, closeTo(2.5, 1e-9));
     });
   });
 

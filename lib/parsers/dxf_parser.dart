@@ -93,6 +93,9 @@ class DxfParserWrapper {
     var insUnits = 4;
     var extMin = const CadPoint3(0, 0, 0);
     var extMax = const CadPoint3(0, 0, 0);
+    // BUG-23 (Anexo C): $DIMTXT del header como último recurso para la
+    // altura de texto de las cotas cuando no hay DIMSTYLE en la tabla.
+    var headerDimTxt = 0.0;
     final layers = <CadLayer>[];
     final blocks = <CadBlock>[];
     final dimStyles = <String, ({double textHeight, double arrowSize})>{};
@@ -104,6 +107,41 @@ class DxfParserWrapper {
     var i = 0;
     while (i < pairs.length) {
       final pair = pairs[i];
+      // Variables del HEADER: en DXF usan el código de grupo 9 (nombre de
+      // la variable) seguido del par con su valor (p. ej. 9/$ACADVER →
+      // 1/AC1021). Antes este bloque estaba anidado dentro de
+      // `if (pair.code == 0)` y NUNCA se ejecutaba: $ACADVER, $INSUNITS,
+      // $EXTMIN/MAX y $DIMTXT quedaban en sus defaults (BUG-23/13).
+      if (section == 'HEADER' && pair.code == 9) {
+        final varName = pair.value;
+        if (i + 1 < pairs.length) {
+          final next = pairs[i + 1];
+          switch (varName) {
+            case r'$ACADVER':
+              version = next.value;
+              i += 2;
+              continue;
+            case r'$INSUNITS':
+              insUnits = int.tryParse(next.value) ?? 4;
+              i += 2;
+              continue;
+            case r'$EXTMIN':
+              extMin = _readPoint(pairs, i + 1) ?? extMin;
+              i = _skipPoint(pairs, i + 1);
+              continue;
+            case r'$EXTMAX':
+              extMax = _readPoint(pairs, i + 1) ?? extMax;
+              i = _skipPoint(pairs, i + 1);
+              continue;
+            case r'$DIMTXT':
+              headerDimTxt = double.tryParse(next.value) ?? 0;
+              i += 2;
+              continue;
+          }
+        }
+        i += 2;
+        continue;
+      }
       if (pair.code == 0) {
         if (pair.value == 'SECTION') {
           if (i + 1 < pairs.length) {
@@ -115,32 +153,6 @@ class DxfParserWrapper {
         if (pair.value == 'ENDSEC') {
           section = '';
           i += 1;
-          continue;
-        }
-        if (section == 'HEADER') {
-          final varName = pair.value;
-          if (i + 1 < pairs.length) {
-            final next = pairs[i + 1];
-            switch (varName) {
-              case r'$ACADVER':
-                version = next.value;
-                i += 2;
-                continue;
-              case r'$INSUNITS':
-                insUnits = int.tryParse(next.value) ?? 4;
-                i += 2;
-                continue;
-              case r'$EXTMIN':
-                extMin = _readPoint(pairs, i + 1) ?? extMin;
-                i = _skipPoint(pairs, i + 1);
-                continue;
-              case r'$EXTMAX':
-                extMax = _readPoint(pairs, i + 1) ?? extMax;
-                i = _skipPoint(pairs, i + 1);
-                continue;
-            }
-          }
-          i += 2;
           continue;
         }
         if (section == 'TABLES' && pair.value == 'LTYPE') {
@@ -214,7 +226,7 @@ class DxfParserWrapper {
             }
             continue;
           }
-          final parsed = _parseEntity(pairs, i, warnings, dimStyles);
+          final parsed = _parseEntity(pairs, i, warnings, dimStyles, headerDimTxt);
           if (parsed != null) {
             if (currentBlock != null) {
               currentBlock = currentBlock.copyWith(
@@ -373,6 +385,7 @@ class DxfParserWrapper {
     int start,
     List<String> warnings,
     Map<String, ({double textHeight, double arrowSize})> dimStyles,
+    double headerDimTxt,
   ) {
     final type = pairs[start].value;
     var end = start + 1;
@@ -498,6 +511,11 @@ class DxfParserWrapper {
         // TOTO-COTAS) → usar el primer DIMSTYLE definido en vez de null.
         if (style == null && dimStyles.isNotEmpty) {
           style = dimStyles.values.first;
+        }
+        // BUG-23 (Anexo C): sin DIMSTYLE en la tabla, usar $DIMTXT del
+        // header (dimtxt por defecto del dibujo) para no quedar en 0.
+        if (style == null && headerDimTxt > 0) {
+          style = (textHeight: headerDimTxt, arrowSize: headerDimTxt);
         }
         final entityTextH = d(140);
         final entityArrow = d(41);

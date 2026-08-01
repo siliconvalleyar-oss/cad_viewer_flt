@@ -79,6 +79,15 @@ class DxfWriter {
     _var70(b, r'$LTSCALE', 1);
     _var70(b, r'$TEXTSIZE', 2.5);
     _var70(b, r'$CELWEIGHT', -1);
+    // BUG-23 (Anexo C): persistir dimtxt/dimasz/dimscale para que los CAD
+    // externos (AutoCAD/LibreCAD) no caigan al dimtxt por defecto (~2.5 u)
+    // y dejen las fuentes de cota desproporcionadas respecto a la medida.
+    final dimStyle = _firstDimStyle(file);
+    if (dimStyle != null) {
+      _var40(b, r'$DIMTXT', dimStyle.textHeight);
+      _var40(b, r'$DIMASZ', dimStyle.arrowSize);
+      _var40(b, r'$DIMSCALE', 1.0);
+    }
     b.writeln('  0');
     b.writeln('ENDSEC');
   }
@@ -166,6 +175,54 @@ class DxfWriter {
     }
     b.writeln('  0');
     b.writeln('ENDTAB');
+
+    // Tabla DIMSTYLE (BUG-23, Anexo C): persistir los estilos de cota
+    // referenciados por las DIMENSION (dimtxt=140, dimasz=41). Sin esta
+    // tabla, los CAD externos reabren las cotas con el dimtxt por defecto.
+    final dimStyles = _collectDimStyles(file);
+    // Solo R2000+: la tabla DIMSTYLE no existe en R12.
+    if (!r12 && dimStyles.isNotEmpty) {
+      b.writeln('  0');
+      b.writeln('TABLE');
+      b.writeln('  2');
+      b.writeln('DIMSTYLE');
+      b.writeln('  5');
+      b.writeln('A0');
+      b.writeln('100');
+      b.writeln('AcDbSymbolTable');
+      b.writeln(' 70');
+      b.writeln('${dimStyles.length}');
+      var handle = 0xA1;
+      for (final entry in dimStyles.entries) {
+        b.writeln('  0');
+        b.writeln('DIMSTYLE');
+        b.writeln('  5');
+        b.writeln(_hexHandle(handle));
+        b.writeln('330');
+        b.writeln('A0');
+        b.writeln('100');
+        b.writeln('AcDbSymbolTableRecord');
+        b.writeln('100');
+        b.writeln('AcDbDimStyleTableRecord');
+        b.writeln('  2');
+        b.writeln(entry.key);
+        b.writeln(' 70');
+        b.writeln('0');
+        // DIMSCALE dentro de un registro DIMSTYLE es el grupo 40 a secas
+        // (el 9 + nombre solo es válido en la sección HEADER).
+        _pair(b, 40, 1.0);
+        _pair(b, 41, entry.value.arrowSize); // DIMASZ
+        _pair(b, 42, 0.625); // DIMEXO
+        _pair(b, 43, entry.value.textHeight * 1.5); // DIMDLI
+        _pair(b, 44, entry.value.textHeight * 0.5); // DIMEXE
+        _pair(b, 140, entry.value.textHeight); // DIMTXT
+        b.writeln(' 77');
+        b.writeln('1'); // DIMTAD: texto sobre la línea
+        handle += 1;
+      }
+      b.writeln('  0');
+      b.writeln('ENDTAB');
+    }
 
     b.writeln('  0');
     b.writeln('ENDSEC');
@@ -631,6 +688,13 @@ class DxfWriter {
     b.writeln('$value');
   }
 
+  void _var40(StringBuffer b, String name, double value) {
+    b.writeln('  9');
+    b.writeln(name);
+    b.writeln(' 40');
+    b.writeln(_formatDouble(value));
+  }
+
   void _varPoint(StringBuffer b, String name, double x, double y) {
     b.writeln('  9');
     b.writeln(name);
@@ -654,4 +718,44 @@ class DxfWriter {
   double _radToDeg(double rad) => rad * 180 / math.pi;
 
   String _hexHandle(int h) => (h.abs() % 0xFFFFFF).toRadixString(16).padLeft(4, '0');
+
+  /// Primer estilo de cota efectivo del archivo (para el header $DIMTXT/
+  /// $DIMASZ). Usa la primera DIMENSION con estilo resuelto; si no hay
+  /// cotas, `null` (no se escribe el header de cota).
+  ({double textHeight, double arrowSize})? _firstDimStyle(CadFile file) {
+    for (final e in file.entities) {
+      if (e is CadDim && (e.textHeight > 0 || e.arrowSize > 0)) {
+        return (
+          textHeight: e.textHeight > 0 ? e.textHeight : 2.5,
+          arrowSize: e.arrowSize > 0 ? e.arrowSize : 2.5,
+        );
+      }
+    }
+    return null;
+  }
+
+  /// Recopila los estilos de cota únicos referenciados por las DIMENSION
+  /// (nombre → dimtxt/dimasz), para escribir la tabla DIMSTYLE. Si una cota
+  /// no trae estilo, se agrupa en `Standard`.
+  Map<String, ({double textHeight, double arrowSize})> _collectDimStyles(
+    CadFile file,
+  ) {
+    final result = <String, ({double textHeight, double arrowSize})>{};
+    for (final e in file.entities) {
+      if (e is! CadDim) {
+        continue;
+      }
+      final name = (e.style == null || e.style!.isEmpty) ? 'Standard' : e.style!;
+      final existing = result[name];
+      result[name] = (
+        textHeight: e.textHeight > 0
+            ? e.textHeight
+            : (existing?.textHeight ?? 2.5),
+        arrowSize: e.arrowSize > 0
+            ? e.arrowSize
+            : (existing?.arrowSize ?? 2.5),
+      );
+    }
+    return result;
+  }
 }
